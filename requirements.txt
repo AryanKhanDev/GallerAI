@@ -1,0 +1,28 @@
+# MemoryLane — Stage 1 dependencies
+# Windows + CPU (no CUDA required)
+
+# Core AI
+open-clip-torch>=2.24.0        # CLIP model
+torch>=2.2.0                   # PyTorch (CPU build is fine for dev)
+torchvision>=0.17.0
+
+# Storage
+lancedb>=0.6.0
+pyarrow>=14.0.0
+
+# OCR
+paddlepaddle>=2.6.0            # PaddlePaddle CPU
+paddleocr>=2.7.3
+
+# Image handling
+Pillow>=10.0.0
+
+# Data / schemas
+pydantic>=2.0.0
+numpy>=1.26.0
+pandas>=2.0.0
+
+# Dev / testing
+pytest>=7.4.0
+pytest-cov
+rich                           # Pretty CLI output (optional)
