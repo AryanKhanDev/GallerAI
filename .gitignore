@@ -46,3 +46,9 @@ ios/
 
 # Personal notes
 NOTES/
+
+# Test images
+test_images_1/
+
+# repo tree output
+repo_tree.txt

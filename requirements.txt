@@ -1,9 +1,15 @@
-# MemoryLane — Stage 1 dependencies
-# Windows + CPU (no CUDA required)
+# GallерAI — Stage 1 dependencies
+# Mirrors pyproject.toml [project.dependencies]
+# Use one or the other — both are kept in sync.
+#
+# Windows + CPU setup:
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
 
 # Core AI
-open-clip-torch>=2.24.0        # CLIP model
-torch>=2.2.0                   # PyTorch (CPU build is fine for dev)
+open-clip-torch>=2.24.0
+torch>=2.2.0
 torchvision>=0.17.0
 
 # Storage
@@ -11,11 +17,11 @@ lancedb>=0.6.0
 pyarrow>=14.0.0
 
 # OCR
-paddlepaddle>=2.6.0            # PaddlePaddle CPU
+paddlepaddle>=2.6.0
 paddleocr>=2.7.3
 
 # Image handling
-Pillow>=10.0.0
+Pillow>=10.1.0           # 10.1+ for .avif support
 
 # Data / schemas
 pydantic>=2.0.0
