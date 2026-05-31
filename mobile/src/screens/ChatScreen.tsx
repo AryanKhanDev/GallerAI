@@ -196,10 +196,11 @@ export default function ChatScreen() {
 
             case "query": {
               const result =
-                await queryImages(
-                  command.text,
-                  20
-                );
+                  await queryImages(
+                    command.text,
+                    20,
+                    "chat"
+                  );
 
               lastResults.current =
                 result.results.map(

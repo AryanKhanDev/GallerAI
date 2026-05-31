@@ -62,18 +62,43 @@ export default function ImageGrid({
   const renderItem = useCallback(
     ({ item }: { item: GridImage }) => {
       const score =
-        scores?.[item.id];
+  scores?.[item.id];
 
-      // Dim low relevance images
-      const opacity =
-        hasScores &&
-        score !== undefined
-          ? score < 0.2
-            ? 0.08
-            : score < 0.35
-            ? 0.3
-            : 1
-          : 1;
+    let opacity = 1;
+
+    if (
+      hasScores &&
+      score !== undefined
+    ) {
+      const allScores =
+        Object.values(
+          scores!
+        ).sort(
+          (a, b) => b - a
+        );
+
+      const idx =
+        allScores.findIndex(
+          (s) => s <= score
+        );
+
+      const percentile =
+        idx /
+        Math.max(
+          allScores.length - 1,
+          1
+        );
+
+      // Distribution-aware dimming
+      opacity =
+        percentile <= 0.15
+          ? 1       // top ~15%
+          : percentile <= 0.40
+          ? 0.72    // good matches
+          : percentile <= 0.70
+          ? 0.42    // weak-ish
+          : 0.15;   // semantic tail
+    }
 
       const uri =
         item.thumbnail_url.startsWith(

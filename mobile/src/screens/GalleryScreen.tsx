@@ -17,6 +17,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Modal,
 } from "react-native";
 
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -43,6 +44,7 @@ import {
   listImages,
   queryImages,
   listAlbums,
+  createAlbum,
   deleteAlbum,
   getAlbum,
   GalleryImage,
@@ -70,8 +72,10 @@ export default function GalleryScreen() {
   } = useGalleryStore();
 
   const {
-    removeAlbum,
-    setAlbums,
+  removeAlbum,
+  addAlbum,
+  setAlbums,
+  albums,
   } = useAlbumStore();
 
   const mode =
@@ -133,7 +137,84 @@ export default function GalleryScreen() {
         | string
         | null,
   });
+  const [
+    createModalVisible,
+    setCreateModalVisible,
+  ] = useState(false);
 
+  const [
+    albumNameDraft,
+    setAlbumNameDraft,
+  ] = useState("");
+
+  const [
+    pendingAlbumImageIds,
+    setPendingAlbumImageIds,
+  ] = useState<string[]>(
+    []
+  );
+  function handleCreateAlbum(
+      imageIds: string[] = []
+    ) {
+      setPendingAlbumImageIds(
+        imageIds
+      );
+
+      setAlbumNameDraft(
+        ""
+      );
+
+      setCreateModalVisible(
+        true
+      );
+    }
+
+    async function confirmCreateAlbum() {
+      const trimmed =
+        albumNameDraft.trim();
+
+      if (!trimmed)
+        return;
+
+      try {
+        const created =
+          await createAlbum(
+            trimmed,
+            pendingAlbumImageIds,
+            activeTags.length
+              ? activeTags.join(
+                  " "
+                )
+              : undefined
+          );
+
+        addAlbum(
+          created
+        );
+
+        setCreateModalVisible(
+          false
+        );
+
+        setAlbumNameDraft(
+          ""
+        );
+
+        setPendingAlbumImageIds(
+          []
+        );
+
+        Alert.alert(
+          "Created",
+          `"${created.name}" created`
+        );
+      } catch {
+        Alert.alert(
+          "Error",
+          "Could not create album"
+        );
+      }
+    }
   const tagDebounceRef =
     useRef<
       ReturnType<
@@ -178,41 +259,68 @@ export default function GalleryScreen() {
   }
 
   async function applyQuery(
-    query: string
-  ) {
-    setTagging(true);
-    setActiveTag(query);
+  query: string
+) {
+  setTagging(true);
+  setActiveTag(query);
 
-    try {
-      const result =
-        await queryImages(
-          query,
-          200
-        );
-
-      const scores:
-        Record<
-          string,
-          number
-        > = {};
-
-      result.results.forEach(
-        (r) => {
-          scores[
-            r.id
-          ] = r.score;
-        }
+  try {
+    const result =
+      await queryImages(
+        query,
+        200,
+        "gallery"
       );
 
-      setTagScores(
-        scores
-      );
-    } finally {
-      setTagging(
-        false
-      );
-    }
+    const scores:
+      Record<
+        string,
+        number
+      > = {};
+
+    result.results.forEach(
+      (r) => {
+        scores[
+          r.id
+        ] = r.score;
+      }
+    );
+
+    // Soft semantic narrowing
+    const combined:
+      Record<
+        string,
+        number
+      > = {};
+
+    Object.entries(
+      scores
+    ).forEach(
+      ([id, score]) => {
+        const prior =
+          tagScores[id];
+
+        combined[id] =
+          prior !== undefined
+            ? Math.min(
+                prior,
+                score
+              )
+            : score;
+      }
+    );
+
+    setTagScores(
+      activeTags.length
+        ? combined
+        : scores
+    );
+  } finally {
+    setTagging(
+      false
+    );
   }
+}
 
   const handleDraftChange =
     (
@@ -454,7 +562,8 @@ export default function GalleryScreen() {
       ]
     );
   }
-
+  
+  
   return (
     <SafeAreaView
       style={[
@@ -473,10 +582,10 @@ export default function GalleryScreen() {
         }
       >
         <Pressable
-          onPress={
-            !selectedAlbum
-              ? toggleTheme
-              : undefined
+          onPress={() =>
+            selectedAlbum
+              ? setSelectedAlbum(
+              null): toggleTheme()
           }
           style={
             styles.logoWrap
@@ -492,7 +601,7 @@ export default function GalleryScreen() {
             ]}
           >
             {selectedAlbum
-              ? selectedAlbum.name
+              ? `← ${selectedAlbum.name}`
               : "GallerAI"}
           </Text>
 
@@ -706,49 +815,335 @@ export default function GalleryScreen() {
         )}
 
       {/* Grid */}
-      {viewMode ===
-      "grid" ? (
-        isLoadingGallery ? (
-          <View
-            style={
-              styles.center
-            }
-          >
-            <ActivityIndicator
-              color={
-                colors.text1
-              }
-            />
-          </View>
-        ) : (
-          <ImageGrid
-            images={
-              sortedImages
-            }
-            scores={
-              Object.keys(
-                tagScores
-              ).length
-                ? tagScores
-                : undefined
-            }
-            onLongPress={(
-              img
-            ) =>
-              setActionSheet(
-                {
-                  visible:
-                    true,
-                  imageId:
-                    img.id,
+      {viewMode === "grid" ? (
+          isLoadingGallery ? (
+            <View
+              style={styles.center}
+            >
+              <ActivityIndicator
+                color={
+                  colors.text1
                 }
-              )
-            }
-            emptyText="No images indexed yet"
-          />
-        )
-      ) : null}
+              />
+            </View>
+          ) : selectedAlbum ? (
+            <ImageGrid
+              images={
+                albumImages
+              }
+              onLongPress={(
+                img
+              ) =>
+                Alert.alert(
+                  "Remove image?",
+                  `Remove from ${selectedAlbum.name}?`,
+                  [
+                    {
+                      text: "Cancel",
+                      style:
+                        "cancel",
+                    },
+                  ]
+                )
+              }
+              emptyText="Album is empty"
+            />
+          ) : (
+            <ImageGrid
+              images={
+                sortedImages
+              }
+              scores={
+                Object.keys(
+                  tagScores
+                ).length
+                  ? tagScores
+                  : undefined
+              }
+              onLongPress={(
+                img
+              ) =>
+                setActionSheet(
+                  {
+                    visible:
+                      true,
+                    imageId:
+                      img.id,
+                  }
+                )
+              }
+              emptyText="No images indexed yet"
+            />
+          )
+        ) : (
+          
+          selectedAlbum ? (
+        <ImageGrid
+          images={
+            albumImages
+          }
+          emptyText="Album is empty"
+          onLongPress={(
+            img
+          ) =>
+            Alert.alert(
+              "Remove image?",
+              `Remove from ${selectedAlbum!.name}?`,
+              [
+                {
+                  text: "Cancel",
+                  style:
+                    "cancel",
+                },
+              ]
+            )
+          }
+        />
+      ) : (
+        <View
+          style={
+            styles.albumsWrap
+          }
+        >
+          {albums.length ===
+          0 ? (
+            <View
+              style={
+                styles.emptyAlbums
+              }
+            >
+              <Text
+                style={[
+                  styles.emptyAlbumsText,
+                  {
+                    color:
+                      colors.text2,
+                  },
+                ]}
+              >
+                No albums yet
+              </Text>
 
+              <TouchableOpacity
+                style={[
+                  styles.createBtn,
+                  {
+                    backgroundColor:
+                      colors.bg1,
+                  },
+                ]}
+                onPress={() =>
+                  handleCreateAlbum()
+                }
+              >
+                <Text
+                  style={[
+                    styles.createBtnText,
+                    {
+                      color:
+                        colors.text0,
+                    },
+                  ]}
+                >
+                  + Create Album
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.createBtn,
+                  {
+                    backgroundColor:
+                      colors.bg1,
+                  },
+                ]}
+                onPress={() =>
+                  handleCreateAlbum()
+                }
+              >
+                <Text
+                  style={[
+                    styles.createBtnText,
+                    {
+                      color:
+                        colors.text0,
+                    },
+                  ]}
+                >
+                  + Create Album
+                </Text>
+              </TouchableOpacity>
+
+              {albums.map(
+                (
+                  album
+                ) => (
+                  <TouchableOpacity
+                    key={
+                      album.id
+                    }
+                    style={[
+                      styles.albumCard,
+                      {
+                        backgroundColor:
+                          colors.bg1,
+                      },
+                    ]}
+                    onPress={() =>
+                      openAlbum(
+                        album
+                      )
+                    }
+                    onLongPress={() =>
+                      handleDeleteAlbum(
+                        album
+                      )
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.albumName,
+                        {
+                          color:
+                            colors.text0,
+                        },
+                      ]}
+                    >
+                      {album.name}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.albumCount,
+                        {
+                          color:
+                            colors.text2,
+                        },
+                      ]}
+                    >
+                      {
+                        album.image_ids
+                          .length
+                      }{" "}
+                      photos
+                    </Text>
+                  </TouchableOpacity>
+                )
+              )}
+            </>
+          )}
+        </View>
+      )
+          
+    )}
+      <Modal
+          visible={
+            createModalVisible
+          }
+          transparent
+          animationType="fade"
+        >
+          <View
+            style={[
+              styles.modalOverlay,
+              {
+                backgroundColor:
+                  colors.overlay,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor:
+                    colors.bg1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.modalTitle,
+                  {
+                    color:
+                      colors.text0,
+                  },
+                ]}
+              >
+                Create Album
+              </Text>
+
+              <TextInput
+                value={
+                  albumNameDraft
+                }
+                onChangeText={
+                  setAlbumNameDraft
+                }
+                placeholder="Album name"
+                placeholderTextColor={
+                  colors.text2
+                }
+                style={[
+                  styles.modalInput,
+                  {
+                    color:
+                      colors.text0,
+                    backgroundColor:
+                      colors.bg2,
+                  },
+                ]}
+                autoFocus
+              />
+
+              <View
+                style={
+                  styles.modalActions
+                }
+              >
+                <TouchableOpacity
+                  onPress={() =>
+                    setCreateModalVisible(
+                      false
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.modalCancel,
+                      {
+                        color:
+                          colors.text2,
+                      },
+                    ]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={
+                    confirmCreateAlbum
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.modalCreate,
+                      {
+                        color:
+                          colors.text0,
+                      },
+                    ]}
+                  >
+                    Create
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       <ImageActionSheet
         visible={
           actionSheet.visible
@@ -906,5 +1301,120 @@ const styles =
         "center",
       justifyContent:
         "center",
+    },
+    albumsWrap: {
+      flex: 1,
+      padding: spacing.md,
+    },
+
+    emptyAlbums: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      gap: spacing.md,
+    },
+
+    emptyAlbumsText: {
+      fontSize:
+        font.md,
+    },
+
+    createBtn: {
+      paddingVertical: 14,
+      borderRadius:
+        radius.md,
+      alignItems:
+        "center",
+      marginBottom:
+        spacing.md,
+    },
+
+    createBtnText: {
+      fontSize:
+        font.md,
+      fontWeight:
+        font.medium,
+    },
+
+    albumCard: {
+      padding:
+        spacing.md,
+      borderRadius:
+        radius.md,
+      marginBottom:
+        spacing.sm,
+    },
+
+    albumName: {
+      fontSize:
+        font.md,
+      fontWeight:
+        font.semibold,
+    },
+
+    albumCount: {
+      marginTop: 4,
+      fontSize:
+        font.sm,
+    },
+
+    modalOverlay: {
+      flex: 1,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      padding:
+        spacing.lg,
+    },
+
+    modalCard: {
+      width: "100%",
+      borderRadius:
+        radius.lg,
+      padding:
+        spacing.lg,
+    },
+
+    modalTitle: {
+      fontSize:
+        font.lg,
+      fontWeight:
+        font.semibold,
+      marginBottom:
+        spacing.md,
+    },
+
+    modalInput: {
+      borderRadius:
+        radius.md,
+      padding:
+        spacing.md,
+      fontSize:
+        font.md,
+    },
+
+    modalActions: {
+      flexDirection:
+        "row",
+      justifyContent:
+        "flex-end",
+      marginTop:
+        spacing.lg,
+      gap:
+        spacing.lg,
+    },
+
+    modalCancel: {
+      fontSize:
+        font.md,
+    },
+
+    modalCreate: {
+      fontSize:
+        font.md,
+      fontWeight:
+        font.semibold,
     },
 });

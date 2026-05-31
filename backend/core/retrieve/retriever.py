@@ -44,7 +44,7 @@ from core.utils.schemas import (
 
 logger = get_logger(__name__)
 
-OCR_LEXICAL_WEIGHT  = 0.60
+OCR_LEXICAL_WEIGHT  = 0.52
 OCR_DOCTYPE_WEIGHT  = 0.25
 OCR_DENSE_WEIGHT    = 0.15
 OCR_DENSE_GATE      = 0.82   # dense only contributes if very confident
@@ -119,39 +119,75 @@ class Retriever:
     def __init__(self, store: ImageStore) -> None:
         self.store = store
 
-    def search(self, parsed: ParsedQuery, top_k: int = DEFAULT_TOP_K) -> QueryResult:
+    def search(
+        self,
+        parsed: ParsedQuery,
+        top_k: int = DEFAULT_TOP_K,
+        mode: str = "gallery",
+    ) -> QueryResult:
         t0 = time.perf_counter()
         all_records = self.store.get_all()
 
         if not all_records:
             logger.warning("Store empty — run ingest")
-            return QueryResult(query=parsed, results=[], latency_ms=0)
+            return QueryResult(
+                query=parsed,
+                results=[],
+                latency_ms=0,
+            )
 
-        scores: dict[str, dict[ExpertType, float]] = {r["id"]: {} for r in all_records}
+        scores: dict[str, dict[ExpertType, float]] = {
+            r["id"]: {}
+            for r in all_records
+        }
 
-        # Semantic
-        if ExpertType.SEMANTIC in parsed.experts and parsed.semantic_text:
-            for rid, score in self._semantic_scores(parsed.semantic_text, all_records).items():
-                scores[rid][ExpertType.SEMANTIC] = score
+        # ── Semantic ──────────────────────────────────────────────────────────
+        if (
+            ExpertType.SEMANTIC in parsed.experts
+            and parsed.semantic_text
+        ):
+            for rid, score in self._semantic_scores(
+                parsed.semantic_text,
+                all_records,
+            ).items():
+                scores[rid][
+                    ExpertType.SEMANTIC
+                ] = score
 
-        # Metadata
-        if ExpertType.METADATA in parsed.experts and parsed.date_filter:
+        # ── Metadata ──────────────────────────────────────────────────────────
+        if (
+            ExpertType.METADATA in parsed.experts
+            and parsed.date_filter
+        ):
             for r in all_records:
-                scores[r["id"]][ExpertType.METADATA] = self._metadata_score(r, parsed)
+                scores[r["id"]][
+                    ExpertType.METADATA
+                ] = self._metadata_score(
+                    r,
+                    parsed,
+                )
 
-        # OCR — always attempted, self-gated inside _ocr_score
+        # ── OCR ───────────────────────────────────────────────────────────────
         if parsed.ocr_keywords:
             for r in all_records:
-                ocr = self._ocr_score(r, parsed.ocr_keywords)
+                ocr = self._ocr_score(
+                    r,
+                    parsed.ocr_keywords,
+                )
                 if ocr > 0:
-                    scores[r["id"]][ExpertType.OCR] = ocr
+                    scores[r["id"]][
+                        ExpertType.OCR
+                    ] = ocr
 
-        # Fusion
-        results: list[RetrievalResult] = []
+        # ── Fusion ────────────────────────────────────────────────────────────
+        results: list[
+            RetrievalResult
+        ] = []
 
         for raw_record in all_records:
             rid = raw_record["id"]
             expert_scores = scores[rid]
+
             if not expert_scores:
                 continue
 
@@ -160,34 +196,194 @@ class Retriever:
                 for e in expert_scores
                 if e.value in FUSION_WEIGHTS
             }
-            total_weight = sum(active_weights.values()) or 1.0
+
+            total_weight = (
+                sum(
+                    active_weights.values()
+                )
+                or 1.0
+            )
+
             final = sum(
-                expert_scores[e] * w / total_weight
+                expert_scores[e]
+                * w
+                / total_weight
                 for e, w in active_weights.items()
             )
 
-            # Drop weak pure-semantic hits below threshold
-            if list(expert_scores) == [ExpertType.SEMANTIC] and final < SEMANTIC_THRESHOLD:
+            # Drop weak pure semantic hits
+            if (
+                list(expert_scores)
+                == [ExpertType.SEMANTIC]
+                and final
+                < SEMANTIC_THRESHOLD
+            ):
                 continue
 
-            results.append(RetrievalResult(
-                record=_row_to_record(raw_record),
-                final_score=round(final, 4),
-                expert_scores=[
-                    ExpertScore(expert=e, score=round(s, 4))
-                    for e, s in expert_scores.items()
-                ],
-            ))
+            results.append(
+                RetrievalResult(
+                    record=_row_to_record(
+                        raw_record
+                    ),
+                    final_score=round(
+                        final,
+                        4,
+                    ),
+                    expert_scores=[
+                        ExpertScore(
+                            expert=e,
+                            score=round(
+                                s,
+                                4,
+                            ),
+                        )
+                        for e, s in expert_scores.items()
+                    ],
+                )
+            )
 
-        results.sort(key=lambda r: r.final_score, reverse=True)
+        # ── Rank ──────────────────────────────────────────────────────────────
+        results.sort(
+            key=lambda r: r.final_score,
+            reverse=True,
+        )
 
-        latency_ms = (time.perf_counter() - t0) * 1000
+       # ── CHAT MODE Hybrid + Intent-Aware Gap ──────────────────────────────
+        if mode == "chat" and results:
+            REL_ALPHA = 0.90
+            ABS_MIN = 0.60
+            GAP_THRESHOLD = 0.015
+
+            best_score = (
+                results[0]
+                .final_score
+            )
+
+            logger.info(
+                "CHAT RAW SCORES: "
+                + str([
+                    round(
+                        r.final_score,
+                        3
+                    )
+                    for r in results[:10]
+                ])
+            )
+
+            # Detect document-style query
+            is_doc_query = bool(
+                query_doc_types(
+                    parsed.ocr_keywords
+                )
+            )
+
+            # Object queries:
+            # strict relative confidence
+            if not is_doc_query:
+                relative_cutoff = (
+                    best_score
+                    * REL_ALPHA
+                )
+
+                hybrid_cutoff = max(
+                    relative_cutoff,
+                    ABS_MIN,
+                )
+
+            # Document queries:
+            # softer relative confidence
+            else:
+                DOC_REL_ALPHA = 0.78
+
+                relative_cutoff = (
+                    best_score
+                    * DOC_REL_ALPHA
+                )
+
+                hybrid_cutoff = max(
+                    relative_cutoff,
+                    ABS_MIN,
+                )
+            # First-pass hybrid filter
+            filtered = [
+                r
+                for r in results
+                if r.final_score
+                >= hybrid_cutoff
+            ]
+
+            # Detect document-style query
+            is_doc_query = bool(
+                query_doc_types(
+                    parsed.ocr_keywords
+                )
+            )
+
+            # Object queries:
+            # use elbow/gap pruning
+            if (
+                not is_doc_query
+                and len(filtered) > 1
+            ):
+                keep_until = len(
+                    filtered
+                )
+
+                for i in range(
+                    len(filtered) - 1
+                ):
+                    gap = (
+                        filtered[i]
+                        .final_score
+                        - filtered[
+                            i + 1
+                        ].final_score
+                    )
+
+                    if (
+                        gap
+                        >= GAP_THRESHOLD
+                    ):
+                        keep_until = (
+                            i + 1
+                        )
+                        break
+
+                results = filtered[
+                    :keep_until
+                ]
+
+            # Document queries:
+            # keep all hybrid-passing docs
+            else:
+                results = filtered
+
+            logger.info(
+                f"Chat cutoff "
+                f"{hybrid_cutoff:.3f} "
+                f"(best={best_score:.3f}, "
+                f"rel={relative_cutoff:.3f}, "
+                f"doc={is_doc_query}) "
+                f"→ {len(results)} kept"
+            )
+        latency_ms = (
+            time.perf_counter()
+            - t0
+        ) * 1000
+
         logger.info(
-            f"Query '{parsed.raw}' -> {len(results)} results "
+            f"Query '{parsed.raw}' "
+            f"mode={mode} "
+            f"-> {len(results)} results "
             f"| experts={[e.value for e in parsed.experts]} "
             f"| {latency_ms:.1f}ms"
         )
-        return QueryResult(query=parsed, results=results[:top_k], latency_ms=latency_ms)
+
+        return QueryResult(
+            query=parsed,
+            results=results[:top_k],
+            latency_ms=latency_ms,
+        )
 
     # -------------------------------------------------------------------------
     # Expert implementations

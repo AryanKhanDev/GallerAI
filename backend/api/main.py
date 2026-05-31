@@ -114,7 +114,7 @@ def _save_albums(albums: dict) -> None:
 class QueryRequest(BaseModel):
     query: str
     top_k: int = 20
-
+    mode: str = "chat"   # chat | gallery
 
 class ImageResult(BaseModel):
     id: str
@@ -243,17 +243,31 @@ def health():
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
     if not req.query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
+        raise HTTPException(
+            status_code=400,
+            detail="Query cannot be empty",
+        )
 
-    parsed    = parse_query(req.query)
+    parsed = parse_query(req.query)
     retriever = get_retriever()
-    result    = retriever.search(parsed, top_k=req.top_k)
+
+    result = retriever.search(
+        parsed,
+        top_k=req.top_k,
+        mode=req.mode,
+    )
 
     return QueryResponse(
         query=req.query,
         experts=[e.value for e in parsed.experts],
-        results=[_result_to_response(r) for r in result.results],
-        latency_ms=round(result.latency_ms, 1),
+        results=[
+            _result_to_response(r)
+            for r in result.results
+        ],
+        latency_ms=round(
+            result.latency_ms,
+            1,
+        ),
         total=len(result.results),
     )
 
