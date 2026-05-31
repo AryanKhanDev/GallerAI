@@ -48,7 +48,20 @@ export const theme = {
   },
 };
 
-export const colors = theme.dark;
+export type ThemeMode =
+  | "dark"
+  | "light";
+
+export const getColors = (
+  mode: ThemeMode = "dark"
+) => theme[mode];
+
+/**
+ * Legacy export
+ * Keeps old screens working.
+ */
+export const colors =
+  theme.dark;
 
 export const spacing = {
   xs: 4,

@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
   Alert,
@@ -21,7 +22,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-  colors,
+  Moon,
+  Sun,
+} from "lucide-react-native";
+
+import {
+  getColors,
   spacing,
   radius,
   font,
@@ -30,6 +36,7 @@ import {
 import {
   useGalleryStore,
   useAlbumStore,
+  useThemeStore,
 } from "../store";
 
 import {
@@ -67,6 +74,20 @@ export default function GalleryScreen() {
     setAlbums,
   } = useAlbumStore();
 
+  const mode =
+    useThemeStore(
+      (s) => s.mode
+    );
+
+  const toggleTheme =
+    useThemeStore(
+      (s) =>
+        s.toggleTheme
+    );
+
+  const colors =
+    getColors(mode);
+
   const [
     viewMode,
     setViewMode,
@@ -83,17 +104,17 @@ export default function GalleryScreen() {
   const [
     activeTags,
     setActiveTags,
-  ] = useState<string[]>(
-    []
-  );
+  ] = useState<
+    string[]
+  >([]);
 
   const [
     selectedAlbum,
     setSelectedAlbum,
   ] =
-    useState<Album | null>(
-      null
-    );
+    useState<
+      Album | null
+    >(null);
 
   const [
     albumImages,
@@ -107,7 +128,10 @@ export default function GalleryScreen() {
     setActionSheet,
   ] = useState({
     visible: false,
-    imageId: null as string | null,
+    imageId:
+      null as
+        | string
+        | null,
   });
 
   const tagDebounceRef =
@@ -184,40 +208,56 @@ export default function GalleryScreen() {
         scores
       );
     } finally {
-      setTagging(false);
+      setTagging(
+        false
+      );
     }
   }
-  const handleDraftChange = (
-  text: string
-) => {
-  setTagDraft(text);
 
-  clearTimeout(
-    tagDebounceRef.current!
-  );
+  const handleDraftChange =
+    (
+      text: string
+    ) => {
+      setTagDraft(
+        text
+      );
 
-  const query = [
-    ...activeTags,
-    text.trim(),
-  ]
-    .filter(Boolean)
-    .join(" ");
+      clearTimeout(
+        tagDebounceRef.current!
+      );
 
-  if (!query.trim()) {
-    setActiveTag("");
-    setTagScores({});
-    return;
-  }
+      const query = [
+        ...activeTags,
+        text.trim(),
+      ]
+        .filter(
+          Boolean
+        )
+        .join(" ");
 
-  tagDebounceRef.current =
-    setTimeout(
-      () =>
-        applyQuery(
-          query
-        ),
-      300
-    );
-};
+      if (
+        !query.trim()
+      ) {
+        setActiveTag(
+          ""
+        );
+
+        setTagScores(
+          {}
+        );
+
+        return;
+      }
+
+      tagDebounceRef.current =
+        setTimeout(
+          () =>
+            applyQuery(
+              query
+            ),
+          300
+        );
+    };
 
   function addTag() {
     const tag =
@@ -269,8 +309,14 @@ export default function GalleryScreen() {
     if (
       next.length === 0
     ) {
-      setActiveTag("");
-      setTagScores({});
+      setActiveTag(
+        ""
+      );
+
+      setTagScores(
+        {}
+      );
+
       return;
     }
 
@@ -278,8 +324,7 @@ export default function GalleryScreen() {
       next.join(" ")
     );
   }
-
-  const sortedImages =
+    const sortedImages =
     React.useMemo(
       () => {
         if (
@@ -363,7 +408,7 @@ export default function GalleryScreen() {
     }
   }
 
-    async function handleDeleteAlbum(
+  async function handleDeleteAlbum(
     album: Album
   ) {
     Alert.alert(
@@ -412,7 +457,13 @@ export default function GalleryScreen() {
 
   return (
     <SafeAreaView
-      style={styles.root}
+      style={[
+        styles.root,
+        {
+          backgroundColor:
+            colors.bg0,
+        },
+      ]}
       edges={["top"]}
     >
       {/* Header */}
@@ -421,21 +472,58 @@ export default function GalleryScreen() {
           styles.header
         }
       >
-        <Text
+        <Pressable
+          onPress={
+            !selectedAlbum
+              ? toggleTheme
+              : undefined
+          }
           style={
-            styles.headerTitle
+            styles.logoWrap
           }
         >
-          {selectedAlbum
-            ? selectedAlbum.name
-            : "Gallery"}
-        </Text>
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color:
+                  colors.text0,
+              },
+            ]}
+          >
+            {selectedAlbum
+              ? selectedAlbum.name
+              : "GallerAI"}
+          </Text>
+
+          {!selectedAlbum &&
+            (mode ===
+            "dark" ? (
+              <Moon
+                size={15}
+                color={
+                  colors.text1
+                }
+              />
+            ) : (
+              <Sun
+                size={15}
+                color={
+                  colors.text1
+                }
+              />
+            ))}
+        </Pressable>
 
         {!selectedAlbum && (
           <View
-            style={
-              styles.toggle
-            }
+            style={[
+              styles.toggle,
+              {
+                backgroundColor:
+                  colors.bg2,
+              },
+            ]}
           >
             {(
               [
@@ -444,31 +532,39 @@ export default function GalleryScreen() {
               ] as ViewMode[]
             ).map(
               (
-                mode
+                modeItem
               ) => (
                 <TouchableOpacity
-                  key={mode}
+                  key={
+                    modeItem
+                  }
                   style={[
                     styles.toggleBtn,
                     viewMode ===
-                      mode &&
-                      styles.toggleActive,
+                      modeItem && {
+                      backgroundColor:
+                        colors.bg1,
+                    },
                   ]}
                   onPress={() =>
                     setViewMode(
-                      mode
+                      modeItem
                     )
                   }
                 >
                   <Text
                     style={[
                       styles.toggleText,
-                      viewMode ===
-                        mode &&
-                        styles.toggleTextActive,
+                      {
+                        color:
+                          viewMode ===
+                          modeItem
+                            ? colors.text0
+                            : colors.text2,
+                      },
                     ]}
                   >
-                    {mode ===
+                    {modeItem ===
                     "grid"
                       ? "Photos"
                       : "Albums"}
@@ -493,14 +589,22 @@ export default function GalleryScreen() {
               (tag) => (
                 <View
                   key={tag}
-                  style={
-                    styles.tagChip
-                  }
+                  style={[
+                    styles.tagChip,
+                    {
+                      backgroundColor:
+                        colors.bg1,
+                    },
+                  ]}
                 >
                   <Text
-                    style={
-                      styles.tagChipText
-                    }
+                    style={[
+                      styles.tagChipText,
+                      {
+                        color:
+                          colors.text0,
+                      },
+                    ]}
                   >
                     {tag}
                   </Text>
@@ -513,9 +617,13 @@ export default function GalleryScreen() {
                     }
                   >
                     <Text
-                      style={
-                        styles.tagChipClose
-                      }
+                      style={[
+                        styles.tagChipClose,
+                        {
+                          color:
+                            colors.text2,
+                        },
+                      ]}
                     >
                       ×
                     </Text>
@@ -527,9 +635,13 @@ export default function GalleryScreen() {
             {tagDraft ===
             "" ? (
               <TouchableOpacity
-                style={
-                  styles.addChip
-                }
+                style={[
+                  styles.addChip,
+                  {
+                    borderColor:
+                      colors.bg2,
+                  },
+                ]}
                 onPress={() =>
                   setTagDraft(
                     " "
@@ -537,19 +649,29 @@ export default function GalleryScreen() {
                 }
               >
                 <Text
-                  style={
-                    styles.addChipText
-                  }
+                  style={[
+                    styles.addChipText,
+                    {
+                      color:
+                        colors.text2,
+                    },
+                  ]}
                 >
-                  +
+                  Add tag +
                 </Text>
               </TouchableOpacity>
             ) : (
               <TextInput
                 autoFocus
-                style={
-                  styles.inlineInput
-                }
+                style={[
+                  styles.inlineInput,
+                  {
+                    color:
+                      colors.text0,
+                    backgroundColor:
+                      colors.bg1,
+                  },
+                ]}
                 value={
                   tagDraft
                 }
@@ -653,8 +775,6 @@ const styles =
   StyleSheet.create({
     root: {
       flex: 1,
-      backgroundColor:
-        colors.bg0,
     },
 
     header: {
@@ -670,9 +790,15 @@ const styles =
         spacing.sm,
     },
 
+    logoWrap: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      gap: 6,
+    },
+
     headerTitle: {
-      color:
-        colors.text0,
       fontSize:
         font.lg,
       fontWeight:
@@ -682,8 +808,6 @@ const styles =
     toggle: {
       flexDirection:
         "row",
-      backgroundColor:
-        colors.bg2,
       borderRadius:
         radius.full,
       padding: 2,
@@ -697,21 +821,9 @@ const styles =
         radius.full,
     },
 
-    toggleActive: {
-      backgroundColor:
-        colors.bg1,
-    },
-
     toggleText: {
-      color:
-        colors.text2,
       fontSize:
         font.sm,
-    },
-
-    toggleTextActive: {
-      color:
-        colors.text0,
     },
 
     tagsRow: {
@@ -732,8 +844,6 @@ const styles =
         "row",
       alignItems:
         "center",
-      backgroundColor:
-        colors.bg1,
       borderRadius:
         radius.full,
       paddingHorizontal:
@@ -747,26 +857,22 @@ const styles =
     },
 
     tagChipText: {
-      color:
-        colors.text0,
-      fontSize:
-        font.sm,
+      fontSize: font.sm,
+      lineHeight: font.sm,
     },
 
     tagChipClose: {
-      color:
-        colors.text2,
       marginLeft: 8,
-      fontSize: 15,
+      fontSize: 13,
+      lineHeight: 13,
+      textAlignVertical: "center",
     },
 
     addChip: {
-      width: 34,
       height: 34,
+      paddingHorizontal: 12,
       borderRadius: 17,
       borderWidth: 1,
-      borderColor:
-        colors.bg2,
       alignItems:
         "center",
       justifyContent:
@@ -776,26 +882,20 @@ const styles =
     },
 
     addChipText: {
-      color:
-        colors.text2,
-      fontSize: 20,
+      fontSize: 12,
       marginTop: -2,
     },
 
     inlineInput: {
       minWidth: 80,
-      color:
-        colors.text0,
       fontSize:
         font.sm,
-      backgroundColor:
-        colors.bg1,
       borderRadius:
         radius.full,
       paddingHorizontal:
         14,
       paddingVertical:
-        8,
+        6,
       marginBottom:
         spacing.sm,
     },
@@ -807,4 +907,4 @@ const styles =
       justifyContent:
         "center",
     },
-  });
+});
