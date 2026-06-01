@@ -268,6 +268,36 @@ export async function removeFromAlbum(
     );
 }
 
+export async function renameAlbum(
+  albumId: string,
+  name: string
+): Promise<Album> {
+  const res =
+    await fetch(
+      `${BASE_URL}/albums/${albumId}`,
+      {
+        method:
+          "PATCH",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body:
+          JSON.stringify(
+            {
+              name,
+            }
+          ),
+      }
+    );
+
+  if (!res.ok)
+    throw new Error(
+      `Rename album failed: ${res.status}`
+    );
+
+  return res.json();
+}
 // ── Health ─────────────────────────────────────────────────────────────────
 
 export async function health(): Promise<{

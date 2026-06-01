@@ -160,6 +160,8 @@ class AlbumCreateRequest(BaseModel):
 class AlbumAddRequest(BaseModel):
     image_ids: list[str]
 
+class AlbumUpdateRequest(BaseModel):
+    name: str
 
 class Album(BaseModel):
     id: str
@@ -456,6 +458,31 @@ def add_to_album(album_id: str, req: AlbumAddRequest):
     _save_albums(albums)
     return {"added": len(new_ids), "total": len(albums[album_id]["image_ids"])}
 
+@app.patch("/albums/{album_id}",
+           response_model=Album)
+def rename_album(
+    album_id: str,
+    req: AlbumUpdateRequest
+):
+    albums = _load_albums()
+
+    if album_id not in albums:
+        raise HTTPException(
+            status_code=404,
+            detail="Album not found"
+        )
+
+    albums[album_id]["name"] = (
+        req.name.strip()
+    )
+
+    _save_albums(
+        albums
+    )
+
+    return albums[
+        album_id
+    ]
 
 @app.delete("/albums/{album_id}/images/{image_id}")
 def remove_from_album(album_id: str, image_id: str):

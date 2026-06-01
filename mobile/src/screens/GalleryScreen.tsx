@@ -46,6 +46,8 @@ import {
   listAlbums,
   createAlbum,
   deleteAlbum,
+  removeFromAlbum,
+  renameAlbum,
   getAlbum,
   GalleryImage,
   Album,
@@ -74,6 +76,7 @@ export default function GalleryScreen() {
   const {
   removeAlbum,
   addAlbum,
+  updateAlbum,
   setAlbums,
   albums,
   } = useAlbumStore();
@@ -148,6 +151,11 @@ export default function GalleryScreen() {
   ] = useState("");
 
   const [
+  renameMode,
+  setRenameMode,
+  ] = useState(false);
+
+  const [
     pendingAlbumImageIds,
     setPendingAlbumImageIds,
   ] = useState<string[]>(
@@ -215,6 +223,63 @@ export default function GalleryScreen() {
         );
       }
     }
+
+    async function confirmRenameAlbum() {
+      const trimmed =
+        albumNameDraft.trim();
+
+      if (
+        !trimmed ||
+        !selectedAlbum
+      ) {
+        return;
+      }
+
+      try {
+        const updated =
+          await renameAlbum(
+            selectedAlbum.id,
+            trimmed
+          );
+
+        setAlbums(
+          albums.map(
+            (a) =>
+              a.id ===
+              updated.id
+                ? updated
+                : a
+          )
+        );
+
+        setSelectedAlbum(
+          updated
+        );
+
+        setCreateModalVisible(
+          false
+        );
+
+        setRenameMode(
+          false
+        );
+
+        setAlbumNameDraft(
+          ""
+        );
+
+        Alert.alert(
+          "Renamed",
+          `"${updated.name}"`
+        );
+      } catch {
+        Alert.alert(
+          "Error",
+          "Could not rename album"
+        );
+      }
+    }
+
   const tagDebounceRef =
     useRef<
       ReturnType<
@@ -591,19 +656,50 @@ export default function GalleryScreen() {
             styles.logoWrap
           }
         >
+        
           <Text
-            style={[
-              styles.headerTitle,
-              {
-                color:
-                  colors.text0,
-              },
-            ]}
+          style={[
+            styles.headerTitle,
+            {
+              color:
+                colors.text0,
+            },
+          ]}
+        >
+          {selectedAlbum
+            ? "← "
+            : "GallerAI"}
+        </Text>
+
+        {selectedAlbum && (
+          <TouchableOpacity
+            onPress={() => {
+              setRenameMode(
+                true
+              );
+
+              setAlbumNameDraft(
+                selectedAlbum.name
+              );
+
+              setCreateModalVisible(
+                true
+              );
+            }}
           >
-            {selectedAlbum
-              ? `← ${selectedAlbum.name}`
-              : "GallerAI"}
-          </Text>
+            <Text
+              style={[
+                styles.headerTitle,
+                {
+                  color:
+                    colors.text0,
+                },
+              ]}
+            >
+              {selectedAlbum.name}
+            </Text>
+          </TouchableOpacity>
+        )}
 
           {!selectedAlbum &&
             (mode ===
@@ -878,12 +974,12 @@ export default function GalleryScreen() {
         ) : (
           
           selectedAlbum ? (
-        <ImageGrid
-          images={
-            albumImages
-          }
-          emptyText="Album is empty"
-          onLongPress={(
+  <ImageGrid
+    images={
+      albumImages
+    }
+    emptyText="Album is empty"
+    onLongPress={(
             img
           ) =>
             Alert.alert(
@@ -895,60 +991,36 @@ export default function GalleryScreen() {
                   style:
                     "cancel",
                 },
+                {
+                  text: "Remove",
+                  style:
+                    "destructive",
+                  onPress:
+                    async () => {
+                      try {
+                        await removeFromAlbum(
+                          selectedAlbum!.id,
+                          img.id
+                        );
+
+                        setAlbumImages(
+                          albumImages.filter(
+                            (i) =>
+                              i.id !== img.id
+                          )
+                        );
+                      } catch {
+                        Alert.alert(
+                          "Error",
+                          "Could not remove image"
+                        );
+                      }
+                    },
+                },
               ]
             )
           }
         />
-      ) : (
-        <View
-          style={
-            styles.albumsWrap
-          }
-        >
-          {albums.length ===
-          0 ? (
-            <View
-              style={
-                styles.emptyAlbums
-              }
-            >
-              <Text
-                style={[
-                  styles.emptyAlbumsText,
-                  {
-                    color:
-                      colors.text2,
-                  },
-                ]}
-              >
-                No albums yet
-              </Text>
-
-              <TouchableOpacity
-                style={[
-                  styles.createBtn,
-                  {
-                    backgroundColor:
-                      colors.bg1,
-                  },
-                ]}
-                onPress={() =>
-                  handleCreateAlbum()
-                }
-              >
-                <Text
-                  style={[
-                    styles.createBtnText,
-                    {
-                      color:
-                        colors.text0,
-                    },
-                  ]}
-                >
-                  + Create Album
-                </Text>
-              </TouchableOpacity>
-            </View>
           ) : (
             <>
               <TouchableOpacity
@@ -1033,11 +1105,9 @@ export default function GalleryScreen() {
                 )
               )}
             </>
-          )}
-        </View>
-      )
           
-    )}
+          
+    ))}
       <Modal
           visible={
             createModalVisible
@@ -1072,7 +1142,9 @@ export default function GalleryScreen() {
                   },
                 ]}
               >
-                Create Album
+                {renameMode
+                  ? "Rename Album"
+                  : "Create Album"}
               </Text>
 
               <TextInput
@@ -1104,11 +1176,19 @@ export default function GalleryScreen() {
                 }
               >
                 <TouchableOpacity
-                  onPress={() =>
+                  onPress={() => {
                     setCreateModalVisible(
                       false
-                    )
-                  }
+                    );
+
+                    setRenameMode(
+                      false
+                    );
+
+                    setAlbumNameDraft(
+                      ""
+                    );
+                  }}
                 >
                   <Text
                     style={[
@@ -1125,7 +1205,9 @@ export default function GalleryScreen() {
 
                 <TouchableOpacity
                   onPress={
-                    confirmCreateAlbum
+                    renameMode
+                    ? confirmRenameAlbum
+                    : confirmCreateAlbum
                   }
                 >
                   <Text
@@ -1137,7 +1219,9 @@ export default function GalleryScreen() {
                       },
                     ]}
                   >
-                    Create
+                    {renameMode
+                      ? "Save"
+                      : "Create"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1146,7 +1230,7 @@ export default function GalleryScreen() {
         </Modal>
       <ImageActionSheet
         visible={
-          actionSheet.visible
+          actionSheet.visible 
         }
         imageId={
           actionSheet.imageId
