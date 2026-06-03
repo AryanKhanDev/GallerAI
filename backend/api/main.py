@@ -192,8 +192,8 @@ def _result_to_response(r, base_url: str = "") -> ImageResult:
         created_at=rec.created_at.isoformat() if rec.created_at else None,
         width=rec.width,
         height=rec.height,
-        thumbnail_url=f"/thumbnail/{rec.id}",
-        image_url=f"/image/{rec.id}",
+        thumbnail_url=f"http://localhost:8000/thumbnail/{rec.id}",
+        image_url=f"http://localhost:8000/image/{rec.id}",
     )
 
 
@@ -301,8 +301,8 @@ def list_images(limit: int = 100, offset: int = 0):
             "width":        r.get("width"),
             "height":       r.get("height"),
             "has_ocr":      bool(r.get("ocr_text")),
-            "thumbnail_url": f"/thumbnail/{r['id']}",
-            "image_url":     f"/image/{r['id']}",
+            "thumbnail_url": f"http://localhost:8000/thumbnail/{r['id']}",
+            "image_url":     f"http://localhost:8000/image/{r['id']}",
         })
 
     return {"total": total, "offset": offset, "limit": limit, "images": results}

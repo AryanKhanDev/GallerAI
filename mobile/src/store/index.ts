@@ -309,3 +309,13 @@ export const useThemeStore =
         },
     })
   );
+
+  // ── Selection ──────────────────────────────────────────────────────────────
+
+export {
+  useSelectionStore,
+} from "./selectionStore";
+
+export type {
+  SelectionContext,
+} from "./selectionStore";

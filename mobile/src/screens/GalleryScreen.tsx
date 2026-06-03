@@ -38,6 +38,7 @@ import {
   useGalleryStore,
   useAlbumStore,
   useThemeStore,
+  useSelectionStore,
 } from "../store";
 
 import {
@@ -55,6 +56,8 @@ import {
 
 import ImageActionSheet from "../components/ImageActionSheet";
 import ImageGrid from "../components/ImageGrid";
+import SelectionBar from "../components/SelectionBar";
+import AlbumPickerModal from "../components/AlbumPickerModal";
 
 type ViewMode =
   | "grid"
@@ -94,6 +97,12 @@ export default function GalleryScreen() {
 
   const colors =
     getColors(mode);
+
+  const {
+    isSelecting,
+    exitSelection,
+  } =
+    useSelectionStore();
 
   const [
     viewMode,
@@ -161,6 +170,16 @@ export default function GalleryScreen() {
   ] = useState<string[]>(
     []
   );
+
+  const [
+  albumPickerMode,
+  setAlbumPickerMode,
+] = useState<
+  "pick" | "create" | null
+>(null);
+
+
+
   function handleCreateAlbum(
       imageIds: string[] = []
     ) {
@@ -927,21 +946,67 @@ export default function GalleryScreen() {
               images={
                 albumImages
               }
-              onLongPress={(
-                img
-              ) =>
-                Alert.alert(
-                  "Remove image?",
-                  `Remove from ${selectedAlbum.name}?`,
-                  [
-                    {
-                      text: "Cancel",
-                      style:
-                        "cancel",
+              selectionContext="album"
+              onLongPress={(img) =>
+              Alert.alert(
+                "Remove image?",
+                `Remove from ${selectedAlbum.name}?`,
+                [
+                  {
+                    text: "Cancel",
+                    style: "cancel",
+                  },
+                  {
+                    text: "Remove",
+                    style: "destructive",
+                    onPress: async () => {
+                      try {
+                        await removeFromAlbum(
+                          selectedAlbum!.id,
+                          img.id
+                        );
+
+                        const updatedImages =
+                          albumImages.filter(
+                            (i) =>
+                              i.id !== img.id
+                          );
+
+                        setAlbumImages(
+                          updatedImages
+                        );
+
+                        if (
+                          selectedAlbum
+                        ) {
+                          const updatedAlbum = {
+                            ...selectedAlbum,
+                            image_ids:
+                              selectedAlbum.image_ids.filter(
+                                (id) =>
+                                  id !== img.id
+                              ),
+                          };
+
+                          setSelectedAlbum(
+                            updatedAlbum
+                          );
+
+                          updateAlbum(
+                            updatedAlbum
+                          );
+                        }
+                      } catch {
+                        Alert.alert(
+                          "Error",
+                          "Could not remove image"
+                        );
+                      }
                     },
-                  ]
-                )
-              }
+                  },
+                ]
+              )
+            }
               emptyText="Album is empty"
             />
           ) : (
@@ -949,6 +1014,7 @@ export default function GalleryScreen() {
               images={
                 sortedImages
               }
+              selectionContext="gallery"
               scores={
                 Object.keys(
                   tagScores
@@ -998,23 +1064,47 @@ export default function GalleryScreen() {
                   onPress:
                     async () => {
                       try {
-                        await removeFromAlbum(
-                          selectedAlbum!.id,
-                          img.id
-                        );
+                await removeFromAlbum(
+                  selectedAlbum!.id,
+                  img.id
+                );
 
-                        setAlbumImages(
-                          albumImages.filter(
-                            (i) =>
-                              i.id !== img.id
-                          )
-                        );
-                      } catch {
-                        Alert.alert(
-                          "Error",
-                          "Could not remove image"
-                        );
-                      }
+                const updatedImages =
+                  albumImages.filter(
+                    (i) =>
+                      i.id !== img.id
+                  );
+
+                setAlbumImages(
+                  updatedImages
+                );
+
+                if (
+                  selectedAlbum
+                ) {
+                  const updatedAlbum = {
+                    ...selectedAlbum,
+                    image_ids:
+                      selectedAlbum.image_ids.filter(
+                        (id) =>
+                          id !== img.id
+                      ),
+                  };
+
+                  setSelectedAlbum(
+                    updatedAlbum
+                  );
+
+                  updateAlbum(
+                    updatedAlbum
+                  );
+                }
+              } catch {
+                Alert.alert(
+                  "Error",
+                  "Could not remove image"
+                );
+              }
                     },
                 },
               ]
@@ -1228,6 +1318,73 @@ export default function GalleryScreen() {
             </View>
           </View>
         </Modal>
+        {isSelecting && (
+  <SelectionBar
+    allIds={
+      selectedAlbum
+        ? albumImages.map(
+            (i) => i.id
+          )
+        : sortedImages.map(
+            (i) => i.id
+          )
+    }
+    imageUriMap={
+  Object.fromEntries(
+    (
+      selectedAlbum
+        ? albumImages
+        : sortedImages
+    ).map(
+      (i) => [
+        i.id,
+        i.image_url,
+      ]
+    )
+  )
+}
+    onAddToAlbum={(
+  ids
+) => {
+  setPendingAlbumImageIds(
+    ids
+  );
+
+  setAlbumPickerMode(
+    "pick"
+  );
+}}
+    onCreateAlbum={(
+  ids
+) => {
+  setPendingAlbumImageIds(
+    ids
+  );
+
+  setAlbumPickerMode(
+    "create"
+  );
+}}
+    onCancel={() =>
+      exitSelection()
+    }
+  />
+)}
+
+<AlbumPickerModal
+  mode={
+    albumPickerMode
+  }
+  imageIds={
+    pendingAlbumImageIds
+  }
+  onClose={() =>
+    setAlbumPickerMode(
+      null
+    )
+  }
+/>
+
       <ImageActionSheet
         visible={
           actionSheet.visible 
