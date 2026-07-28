@@ -22,12 +22,13 @@ import {
   Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, spacing, radius, font } from "../utils/theme";
+import { getColors, spacing, radius, font } from "../utils/theme";
 import {
   useChatStore,
   useAlbumStore,
   useSelectionStore,
   ChatMessage,
+  useThemeStore,
 } from "../store";
 import {
   queryImages,
@@ -47,6 +48,11 @@ import SelectionBar from "../components/SelectionBar";
 import AlbumPickerModal, {
   AlbumPickerMode,
 } from "../components/AlbumPickerModal";
+
+import { Pressable } from "react-native";
+import { Moon, Sun } from "lucide-react-native";
+
+import ImageViewerModal from "../components/ImageViewerModal";
 
 const SCREEN_W = Dimensions.get("window").width;
 const THUMB =
@@ -70,7 +76,10 @@ export default function ChatScreen() {
     addAlbum,
     removeAlbum,
   } = useAlbumStore();
-
+  const mode = useThemeStore((s) => s.mode);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
+  const colors = getColors(mode);
+  const styles = createStyles(colors);
   // Only care about `context` here — used to make sure this screen's
   // SelectionBar only renders when the active selection belongs to chat,
   // since Chat and Gallery are both mounted simultaneously in the pager.
@@ -96,6 +105,10 @@ export default function ChatScreen() {
       mode: null,
       ids: [],
     });
+  
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerImages, setViewerImages] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   const listRef =
     useRef<FlatList>(null);
@@ -424,23 +437,27 @@ export default function ChatScreen() {
                     <SelectableImage
                       key={img.id}
                       id={img.id}
-                      thumbnailUrl={
-                        img.thumbnail_url
-                      }
+                      thumbnailUrl={img.thumbnail_url}
                       size={THUMB}
                       selectionContext="chat"
-                      // Tap behaviour outside selection mode is unchanged
-                      // from before (no-op) — SelectableImage only invokes
-                      // this when selection isn't active for "chat".
+                      onPress={() => {
+                        setViewerImages(
+                          item.images!.map((i) =>
+                            resolveUri(i.image_url || i.thumbnail_url)
+                          )
+                        );
+
+                        setViewerIndex(
+                          item.images!.findIndex((i) => i.id === img.id)
+                        );
+
+                        setViewerVisible(true);
+                      }}
                       onLongPress={() =>
-                        setActionSheet(
-                          {
-                            visible:
-                              true,
-                            imageId:
-                              img.id,
-                          }
-                        )
+                        setActionSheet({
+                          visible: true,
+                          imageId: img.id,
+                        })
                       }
                     />
                   )
@@ -463,7 +480,7 @@ export default function ChatScreen() {
           styles.emptyTitle
         }
       >
-        GallерAI
+        GallеrAI
       </Text>
 
       <Text
@@ -471,17 +488,33 @@ export default function ChatScreen() {
           styles.emptySubtitle
         }
       >
-        Ask anything about
-        your photos
+        Search and organize your photos with AI 
       </Text>
     </View>
   );
 
   return (
-    <SafeAreaView
-      style={styles.root}
-      edges={["top"]}
-    >
+  <SafeAreaView
+    style={styles.root}
+    edges={["top"]}
+  >
+    <View style={styles.header}>
+      <Text style={[styles.headerTitle, { color: colors.text0 }]}>
+        GallerAI
+      </Text>
+
+      <Pressable
+        onPress={toggleTheme}
+        hitSlop={8}
+        style={styles.themeToggleBtn}
+      >
+        {mode === "dark" ? (
+          <Moon size={18} color={colors.text1} />
+        ) : (
+          <Sun size={18} color={colors.text1} />
+        )}
+      </Pressable>
+    </View>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={
@@ -653,18 +686,41 @@ export default function ChatScreen() {
           })
         }
       />
+      <ImageViewerModal
+  visible={viewerVisible}
+  images={viewerImages}
+  initialIndex={viewerIndex}
+  onClose={() => setViewerVisible(false)}
+/>
     </SafeAreaView>
   );
 }
 
-const styles =
+const createStyles = (colors: ReturnType<typeof getColors>) =>
   StyleSheet.create({
     root: {
       flex: 1,
       backgroundColor:
         colors.bg0,
     },
+    header: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  paddingHorizontal: spacing.md,
+  paddingVertical: spacing.sm,
+  backgroundColor: colors.bg0,
 
+},
+
+headerTitle: {
+  fontSize: font.lg,
+  fontWeight: font.semibold,
+},
+
+themeToggleBtn: {
+  padding: 4,
+},
     flex: { flex: 1 },
 
     list: {
@@ -816,7 +872,7 @@ const styles =
     input: {
       flex: 1,
       color:
-        colors.text0,
+      colors.text0,
       fontSize:
         font.md,
       lineHeight: 22,
@@ -829,7 +885,7 @@ const styles =
       height: 38,
       borderRadius: 19,
       backgroundColor:
-        "#ffffff",
+        colors.accent,
       alignItems:
         "center",
       justifyContent:
@@ -842,9 +898,11 @@ const styles =
     },
 
     sendIcon: {
-      color: "#000",
+      color: colors.accentText,
       fontSize: 18,
       fontWeight:
         "700",
     },
   });
+
+  

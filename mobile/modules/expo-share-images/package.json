@@ -1,0 +1,13 @@
+{
+  "name": "expo-share-images",
+  "version": "1.0.0",
+  "description": "Native multi-image sharing (Android ACTION_SEND_MULTIPLE / iOS UIActivityViewController) for GALLERAI.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "source": "src/index.ts",
+  "keywords": ["react-native", "expo", "expo-share-images", "share"],
+  "license": "MIT",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

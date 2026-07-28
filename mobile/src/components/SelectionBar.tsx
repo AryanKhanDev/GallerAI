@@ -2,7 +2,7 @@
  * src/components/SelectionBar.tsx
  *
  * Floating bar that appears whenever selection mode is active.
- * Shared between Gallery and Chat.
+ * Shared between Gallery, Albums, and Chat.
  */
 
 import React, {
@@ -17,10 +17,7 @@ import {
   StyleSheet,
   Animated,
   Alert,
-  Platform,
 } from "react-native";
-
-import * as FileSystem from "expo-file-system";
 
 import {
   useSelectionStore,
@@ -32,6 +29,8 @@ import {
   radius,
   font,
 } from "../utils/theme";
+
+import { shareImages } from "../native/share";
 
 interface Props {
   allIds: string[];
@@ -129,22 +128,26 @@ export default function SelectionBar({
 
   const handleShare =
     async () => {
+      const ids =
+        selectedArray();
+
+      if (
+        ids.length === 0
+      ) {
+        return;
+      }
+
       try {
-        const ids =
-          selectedArray();
+        const uris = ids
+          .map((id) => imageUriMap[id])
+          .filter(
+            (uri): uri is string =>
+              !!uri
+          );
 
         if (
-          ids.length === 0
+          uris.length === 0
         ) {
-          return;
-        }
-
-        const uri =
-          imageUriMap[
-            ids[0]
-          ];
-
-        if (!uri) {
           Alert.alert(
             "Error",
             "Image unavailable"
@@ -152,66 +155,19 @@ export default function SelectionBar({
           return;
         }
 
-        if (
-          Platform.OS ===
-          "web"
-        ) {
-          window.open(
-            uri,
-            "_blank"
-          );
-          return;
-        }
-
-        const Sharing =
-          await import(
-            "expo-sharing"
-          );
-
-        const canShare =
-          await Sharing.isAvailableAsync();
-
-        if (
-          !canShare
-        ) {
-          Alert.alert(
-            "Unavailable",
-            "Sharing not supported"
-          );
-          return;
-        }
-
-        const filename =
-          uri.split(
-            "/"
-          ).pop() ??
-          "image.jpg";
-
-        const localUri =
-          FileSystem.Paths
-            .cache.uri +
-          filename;
-
-        await FileSystem.copyAsync(
-          {
-            from: uri,
-            to: localUri,
-          }
-        );
-
-        await Sharing.shareAsync(
-          localUri
+        await shareImages(
+          uris
         );
       } catch (
         err
       ) {
-        console.log(
+        console.error(
           err
         );
 
         Alert.alert(
           "Error",
-          "Could not share image"
+          "Could not share the selected images"
         );
       }
     };

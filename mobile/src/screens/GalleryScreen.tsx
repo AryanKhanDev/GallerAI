@@ -59,6 +59,8 @@ import ImageGrid from "../components/ImageGrid";
 import SelectionBar from "../components/SelectionBar";
 import AlbumPickerModal from "../components/AlbumPickerModal";
 
+import ImageViewerModal from "../components/ImageViewerModal";
+
 type ViewMode =
   | "grid"
   | "albums";
@@ -177,7 +179,11 @@ export default function GalleryScreen() {
 ] = useState<
   "pick" | "create" | null
 >(null);
+  const [viewerVisible, setViewerVisible] =
+  useState(false);
 
+  const [viewerIndex, setViewerIndex] =
+    useState(0);
 
 
   function handleCreateAlbum(
@@ -549,7 +555,15 @@ export default function GalleryScreen() {
         tagScores,
       ]
     );
+const displayedImages =
+  selectedAlbum
+    ? albumImages
+    : sortedImages;
 
+const viewerImages =
+  displayedImages.map(
+    (img) => img.image_url
+  );
   async function openAlbum(
     album: Album
   ) {
@@ -1022,6 +1036,19 @@ export default function GalleryScreen() {
                   ? tagScores
                   : undefined
               }
+              onPress={(img) => {
+              if (isSelecting) return;
+
+              const index =
+                displayedImages.findIndex(
+                  (i) => i.id === img.id
+                );
+
+              if (index >= 0) {
+                setViewerIndex(index);
+                setViewerVisible(true);
+              }
+            }}
               onLongPress={(
                 img
               ) =>
@@ -1045,6 +1072,19 @@ export default function GalleryScreen() {
       albumImages
     }
     emptyText="Album is empty"
+    onPress={(img) => {
+  if (isSelecting) return;
+
+  const index =
+    displayedImages.findIndex(
+      (i) => i.id === img.id
+    );
+
+  if (index >= 0) {
+    setViewerIndex(index);
+    setViewerVisible(true);
+  }
+}}
     onLongPress={(
             img
           ) =>
@@ -1382,6 +1422,15 @@ export default function GalleryScreen() {
     setAlbumPickerMode(
       null
     )
+  }
+/>
+
+<ImageViewerModal
+  visible={viewerVisible}
+  images={viewerImages}
+  initialIndex={viewerIndex}
+  onClose={() =>
+    setViewerVisible(false)
   }
 />
 
