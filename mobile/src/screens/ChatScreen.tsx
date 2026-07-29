@@ -6,6 +6,12 @@
  *   Reuses the shared selection infrastructure (useSelectionStore,
  *   SelectableImage, SelectionBar, AlbumPickerModal) that Gallery uses,
  *   scoped to selectionContext="chat".
+ *
+ * Upload support:
+ *   '+' rolls up into a small Camera/Upload menu. A picked/captured
+ *   image uploads to the backend, refreshes the Gallery store, then
+ *   offers an optional album assignment via PostUploadSheet, which
+ *   hands off to the existing AlbumPickerModal.
  */
 
 import React, { useState, useRef, useCallback } from "react";
@@ -14,12 +20,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   FlatList,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Dimensions,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getColors, spacing, radius, font } from "../utils/theme";
@@ -48,6 +56,13 @@ import SelectionBar from "../components/SelectionBar";
 import AlbumPickerModal, {
   AlbumPickerMode,
 } from "../components/AlbumPickerModal";
+import UploadMenu from "../components/UploadMenu";
+import PostUploadSheet from "../components/PostUploadSheet";
+import {
+  pickFromCamera,
+  pickFromLibrary,
+  performUpload,
+} from "../services/uploadService";
 
 import { Pressable } from "react-native";
 import { Moon, Sun } from "lucide-react-native";
@@ -109,6 +124,15 @@ export default function ChatScreen() {
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerImages, setViewerImages] = useState<string[]>([]);
   const [viewerIndex, setViewerIndex] = useState(0);
+
+  // ── Upload menu / flow ────────────────────────────────────────────────
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [postUpload, setPostUpload] =
+    useState<{ visible: boolean; imageId: string | null }>({
+      visible: false,
+      imageId: null,
+    });
 
   const listRef =
     useRef<FlatList>(null);
@@ -177,6 +201,52 @@ export default function ChatScreen() {
       setAlbumPicker({ mode: "create", ids });
     },
     []
+  );
+
+  // ── Upload handlers ──────────────────────────────────────────────────
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const toggleMenu = useCallback(() => setMenuOpen((v) => !v), []);
+
+  const runUpload = useCallback(
+    async (uri: string | null) => {
+      if (!uri || uploading) return;
+      setUploading(true);
+      try {
+        const image = await performUpload(uri);
+        setPostUpload({ visible: true, imageId: image.id });
+      } catch (e: any) {
+        Alert.alert(
+          "Upload failed",
+          e?.message || "Something went wrong."
+        );
+      } finally {
+        setUploading(false);
+      }
+    },
+    [uploading]
+  );
+
+  const handleCameraPress = useCallback(async () => {
+    closeMenu();
+    const uri = await pickFromCamera();
+    runUpload(uri);
+  }, [closeMenu, runUpload]);
+
+  const handleUploadPress = useCallback(async () => {
+    closeMenu();
+    const uri = await pickFromLibrary();
+    runUpload(uri);
+  }, [closeMenu, runUpload]);
+
+  const handlePostUploadChoice = useCallback(
+    (chosenMode: Exclude<AlbumPickerMode, null>) => {
+      const id = postUpload.imageId;
+      setPostUpload({ visible: false, imageId: null });
+      if (id) {
+        setAlbumPicker({ mode: chosenMode, ids: [id] });
+      }
+    },
+    [postUpload.imageId]
   );
 
   const handleSend = useCallback(async () => {
@@ -569,6 +639,12 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {menuOpen && (
+          <TouchableWithoutFeedback onPress={closeMenu}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+        )}
+
         {/* ChatGPT composer */}
         <View
           style={
@@ -580,19 +656,36 @@ export default function ChatScreen() {
               styles.composer
             }
           >
-            <TouchableOpacity
-              style={
-                styles.plusBtn
-              }
-            >
-              <Text
+            <View>
+              <UploadMenu
+                visible={menuOpen}
+                onCamera={handleCameraPress}
+                onUpload={handleUploadPress}
+              />
+
+              <TouchableOpacity
                 style={
-                  styles.plusIcon
+                  styles.plusBtn
                 }
+                onPress={toggleMenu}
+                disabled={uploading}
               >
-                +
-              </Text>
-            </TouchableOpacity>
+                {uploading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.text1}
+                  />
+                ) : (
+                  <Text
+                    style={
+                      styles.plusIcon
+                    }
+                  >
+                    {menuOpen ? "×" : "+"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
 
             <TextInput
               style={
@@ -686,6 +779,15 @@ export default function ChatScreen() {
           })
         }
       />
+
+      <PostUploadSheet
+        visible={postUpload.visible}
+        onChoose={handlePostUploadChoice}
+        onSkip={() =>
+          setPostUpload({ visible: false, imageId: null })
+        }
+      />
+
       <ImageViewerModal
   visible={viewerVisible}
   images={viewerImages}
@@ -904,5 +1006,3 @@ themeToggleBtn: {
         "700",
     },
   });
-
-  

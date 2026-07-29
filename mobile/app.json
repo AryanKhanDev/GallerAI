@@ -14,6 +14,7 @@
       }
     },
     "android": {
+      "package": "com.aryankhandev.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -29,7 +30,15 @@
       "expo-router",
       "expo-status-bar",
       "expo-sharing",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GallerAI to access your photos so you can add them to your gallery.",
+          "cameraPermission": "Allow GallerAI to use your camera to take photos for your gallery."
+        }
+      ],
+      "expo-font"
     ],
     "extra": {
       "router": {},

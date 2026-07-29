@@ -1,4 +1,6 @@
+# -------------------------
 # Python
+# -------------------------
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,49 +8,78 @@ __pycache__/
 venv/
 env/
 *.egg-info/
-dist/
 build/
+dist/
 
-# Data (never commit user images or local DB)
-data/
-*.lance/
+# -------------------------
+# Environment
+# -------------------------
+.env
+.env.*
+.python-version
 
-# Models (large artifacts)
+# -------------------------
+# Logs / caches
+# -------------------------
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# -------------------------
+# IDE
+# -------------------------
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# -------------------------
+# OS
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# React Native / Expo
+# -------------------------
+node_modules/
+.expo/
+.expo-shared/
+
+android/
+ios/
+
+*.apk
+*.aab
+*.ipa
+
+# Metro / bundler
+.metro-health-check*
+
+# -------------------------
+# AI models (re-downloadable)
+# -------------------------
 *.onnx
 *.pt
 *.pth
 *.bin
 *.gguf
 
-# Logs
-*.log
+# -------------------------
+# Local data (DO NOT COMMIT)
+# -------------------------
+data/
+*.lance/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-
-# Expo / React Native (Stage 3)
-node_modules/
-.expo/
-android/
-ios/
-*.apk
-*.ipa
-
-# Environment / secrets
-.env
-.env.*
+# Uploads / test assets
+test_images_1/
 
 # Personal notes
 NOTES/
-
-# Test images
-test_images_1/
-
-# repo tree output
 repo_tree.txt
+
+mobile/.claude/
+mobile/AGENTS.md
+mobile/CLAUDE.md

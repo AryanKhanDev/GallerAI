@@ -1,10 +1,16 @@
-/**
- * src/api/client.ts
- * All communication with the GallерAI FastAPI backend.
- */
+import { Platform } from "react-native";
 
+/**
+ * Base URL for the GallерAI backend.
+ *
+ * - Web uses localhost.
+ * - Android emulator uses 10.0.2.2 to reach the host machine.
+ * - iOS simulator also uses localhost.
+ */
 export const BASE_URL =
-  "http://localhost:8000";
+  Platform.OS === "android"
+    ? "http://10.0.2.2:8000"
+    : "http://localhost:8000";
 
 export function imageUrl(
   id: string
@@ -124,6 +130,38 @@ export async function listImages(
   if (!res.ok)
     throw new Error(
       `List images failed: ${res.status}`
+    );
+
+  return res.json();
+}
+
+// ── Upload ─────────────────────────────────────────────────────────────────
+
+export async function uploadImage(
+  uri: string,
+  filename?: string
+): Promise<GalleryImage> {
+  const name =
+    filename ||
+    uri.split("/").pop() ||
+    `upload_${Date.now()}.jpg`;
+
+  const match = /\.(\w+)$/.exec(name);
+  const ext = match ? match[1].toLowerCase() : "jpg";
+  const mime = `image/${ext === "jpg" ? "jpeg" : ext}`;
+
+  const form = new FormData();
+  // @ts-ignore - RN FormData accepts this shape for file uploads
+  form.append("file", { uri, name, type: mime });
+
+  const res = await fetch(`${BASE_URL}/upload`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok)
+    throw new Error(
+      `Upload failed: ${res.status}`
     );
 
   return res.json();

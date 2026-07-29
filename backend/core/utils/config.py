@@ -9,13 +9,14 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 
-ROOT_DIR  = Path(__file__).resolve().parents[2]
-DATA_DIR  = ROOT_DIR / "data"
-DB_DIR    = DATA_DIR / "lancedb"
-LOGS_DIR  = DATA_DIR / "logs"
-CACHE_DIR = DATA_DIR / "cache"
+ROOT_DIR    = Path(__file__).resolve().parents[2]
+DATA_DIR    = ROOT_DIR / "data"
+DB_DIR      = DATA_DIR / "lancedb"
+LOGS_DIR    = DATA_DIR / "logs"
+CACHE_DIR   = DATA_DIR / "cache"
+UPLOAD_DIR  = DATA_DIR / "uploads"
 
-for _d in (DATA_DIR, DB_DIR, LOGS_DIR, CACHE_DIR):
+for _d in (DATA_DIR, DB_DIR, LOGS_DIR, CACHE_DIR, UPLOAD_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------

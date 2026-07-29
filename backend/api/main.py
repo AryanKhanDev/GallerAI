@@ -8,10 +8,12 @@ Endpoints:
   GET  /image/{image_id}          → serve full image by hash id
   GET  /thumbnail/{image_id}      → serve resized thumbnail (300px)
   GET  /images                    → list all indexed images
+  POST /upload                    → upload + index a single image
   POST /ingest                    → trigger indexing of a directory
   GET  /albums                    → list all albums
   POST /albums                    → create album (manual or auto from query)
   GET  /albums/{album_id}         → get album contents
+  PATCH /albums/{album_id}        → rename album
   POST /albums/{album_id}/add     → add images to album
   DELETE /albums/{album_id}/images/{image_id}  → remove image from album
   DELETE /albums/{album_id}       → delete album
@@ -22,6 +24,7 @@ Run from repo root:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import sys
@@ -31,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from PIL import Image as PILImage
@@ -43,9 +46,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.ingest.store import ImageStore
 from core.retrieve.retriever import Retriever
 from core.retrieve.router import parse_query
-from core.utils.config import CACHE_DIR
+from core.utils.config import CACHE_DIR, UPLOAD_DIR
 from core.utils.log import get_logger
-from core.utils.schemas import QueryResult
+from core.utils.schemas import ImageRecord, QueryResult
 
 logger = get_logger("api")
 
@@ -197,6 +200,21 @@ def _result_to_response(r, base_url: str = "") -> ImageResult:
     )
 
 
+def _gallery_image_response(record: dict) -> dict:
+    created = record["created_at"]
+    return {
+        "id": record["id"],
+        "filename": record["filename"],
+        "path": record["path"],
+        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
+        "width": record.get("width"),
+        "height": record.get("height"),
+        "has_ocr": bool(record.get("ocr_text")),
+        "thumbnail_url": f"http://localhost:8000/thumbnail/{record['id']}",
+        "image_url": f"http://localhost:8000/image/{record['id']}",
+    }
+
+
 def _serve_image(image_id: str, max_size: Optional[int] = None) -> Response:
     store = get_store()
     all_records = store.get_all()
@@ -254,10 +272,10 @@ def query(req: QueryRequest):
     retriever = get_retriever()
 
     result = retriever.search(
-        parsed,
-        top_k=req.top_k,
-        mode=req.mode,
-    )
+    parsed,
+    top_k=req.top_k,
+    mode=req.mode,
+)
 
     return QueryResponse(
         query=req.query,
@@ -291,21 +309,93 @@ def list_images(limit: int = 100, offset: int = 0):
     total = len(all_records)
     page = all_records[offset : offset + limit]
 
-    results = []
-    for r in page:
-        results.append({
-            "id":           r["id"],
-            "filename":     r["filename"],
-            "path":         r["path"],
-            "created_at":   r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),
-            "width":        r.get("width"),
-            "height":       r.get("height"),
-            "has_ocr":      bool(r.get("ocr_text")),
-            "thumbnail_url": f"http://localhost:8000/thumbnail/{r['id']}",
-            "image_url":     f"http://localhost:8000/image/{r['id']}",
-        })
+    results = [_gallery_image_response(r) for r in page]
 
     return {"total": total, "offset": offset, "limit": limit, "images": results}
+
+
+# ---------------------------------------------------------------------------
+# Single image upload (camera / library)
+# ---------------------------------------------------------------------------
+
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    file_hash = hashlib.sha256(raw).hexdigest()
+    orig_name = file.filename or f"upload_{file_hash[:8]}.jpg"
+    ext = Path(orig_name).suffix.lower() or ".jpg"
+    saved_path = UPLOAD_DIR / f"{file_hash}{ext}"
+
+    store = get_store()
+
+    # Dedup: if this exact file is already indexed, just return it —
+    # no re-embedding, no duplicate on disk.
+    existing = next((r for r in store.get_all() if r["id"] == file_hash), None)
+    if existing:
+        return _gallery_image_response(existing)
+
+    saved_path.write_bytes(raw)
+
+    try:
+        img = PILImage.open(saved_path).convert("RGB")
+    except Exception as e:
+        saved_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    from core.embed.clip_encoder import embed_images, embed_text
+    from core.embed.ocr_extractor import batch_extract
+    from core.utils.config import CLIP_EMBED_DIM
+    import numpy as np
+
+    now = datetime.now(timezone.utc)
+
+    rec = ImageRecord(
+        id=file_hash,
+        path=str(saved_path.resolve()),
+        filename=orig_name,
+        created_at=now,
+        modified_at=now,
+        file_size_bytes=len(raw),
+        width=img.width,
+        height=img.height,
+    )
+
+    img_embs = embed_images([img])
+    rec.embedding = img_embs[0].tolist() if len(img_embs) else []
+
+    chunks = batch_extract([img])[0]
+    rec.ocr_chunks = chunks
+    rec.ocr_chunk_embeddings = []
+    if chunks:
+        ocr_text = " ".join(chunks).strip()
+        rec.ocr_text = ocr_text
+        rec.ocr_embedding = embed_text(ocr_text).tolist()
+    else:
+        rec.ocr_text = None
+        rec.ocr_embedding = np.zeros(CLIP_EMBED_DIM, dtype=np.float32).tolist()
+
+    store.upsert([rec])
+
+    # Invalidate retriever so it picks up the new image
+    global _retriever
+    _retriever = None
+
+    logger.info(f"Uploaded + indexed image: {orig_name} ({file_hash[:8]})")
+
+    return {
+        "id": rec.id,
+        "filename": rec.filename,
+        "path": rec.path,
+        "created_at": rec.created_at.isoformat(),
+        "width": rec.width,
+        "height": rec.height,
+        "has_ocr": bool(rec.ocr_text),
+        "thumbnail_url": f"http://localhost:8000/thumbnail/{rec.id}",
+        "image_url": f"http://localhost:8000/image/{rec.id}",
+    }
 
 
 # ---------------------------------------------------------------------------
