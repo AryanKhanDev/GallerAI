@@ -2,10 +2,13 @@
  * src/components/UploadMenu.tsx
  * Minimal roll-up menu shown above the composer's '+' button.
  * No card, border, or divider — just two floating rows.
+ *
+ * Camera is hidden on web: expo-image-picker's launchCameraAsync
+ * isn't supported there, so Upload (file picker) is the only option.
  */
 
 import React, { useEffect, useRef } from "react";
-import { Animated, TouchableOpacity, Text, StyleSheet } from "react-native";
+import { Animated, TouchableOpacity, Text, StyleSheet, Platform } from "react-native";
 import { colors, spacing, font } from "../utils/theme";
 
 interface Props {
@@ -35,10 +38,12 @@ export default function UploadMenu({ visible, onCamera, onUpload }: Props) {
       pointerEvents={visible ? "auto" : "none"}
       style={[styles.wrap, { opacity: anim, transform: [{ translateY }] }]}
     >
-      <TouchableOpacity style={styles.item} onPress={onCamera} activeOpacity={0.6}>
-        <Text style={styles.icon}>📷</Text>
-        <Text style={styles.label}>Camera</Text>
-      </TouchableOpacity>
+      {Platform.OS !== "web" && (
+        <TouchableOpacity style={styles.item} onPress={onCamera} activeOpacity={0.6}>
+          <Text style={styles.icon}>📷</Text>
+          <Text style={styles.label}>Camera</Text>
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity style={styles.item} onPress={onUpload} activeOpacity={0.6}>
         <Text style={styles.icon}>🖼️</Text>

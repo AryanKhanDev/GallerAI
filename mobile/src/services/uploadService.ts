@@ -3,6 +3,7 @@
  * Camera/library picking + upload + gallery refresh.
  */
 
+import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { listImages, uploadImage, GalleryImage } from "../api/client";
 import { useGalleryStore } from "../store";
@@ -13,6 +14,11 @@ export async function refreshGallery(): Promise<void> {
 }
 
 export async function pickFromCamera(): Promise<string | null> {
+  // launchCameraAsync isn't implemented on web — UploadMenu already
+  // hides this option there, but guard here too in case it's ever
+  // called from somewhere else.
+  if (Platform.OS === "web") return null;
+
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) return null;
 

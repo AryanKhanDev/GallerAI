@@ -418,26 +418,23 @@ class Retriever:
             return 0.0
 
     def _ocr_score(self, record: dict, keywords: list[str]) -> float:
+
         """
         Three-layer OCR scoring:
 
         Layer 1 — Lexical evidence (synonym-expanded, stem-tolerant)
-            "bill" expands to receipt/invoice/statement → token match in OCR text
-            Original keyword match: full weight
-            Synonym-expansion match: half weight
-
         Layer 2 — Document-type match
-            "bill" implies doc_type=financial
-            If OCR text looks like a financial document (prices, totals, etc.)
-            → score = 1.0 regardless of exact token overlap
-            Solves: "bill" matching Walmart receipt that never says "bill"
+        Layer 3 — Dense semantic assist (boost-only, see note below)
 
-        Layer 3 — Dense semantic assist (gated)
-            CLIP text similarity, only fires above OCR_DENSE_GATE=0.82
-            Safety valve for novel queries not covered by layers 1+2
-
-        Self-gate: if all three layers produce 0 → return 0
-        Prevents non-text images from ever contributing OCR noise.
+        Self-gate: only lexical or doc-type evidence can establish that
+        OCR is relevant to this query. Dense CLIP text-vs-text similarity
+        is NOT used as a standalone trigger — short/garbled OCR strings
+        routinely score 0.6-0.9+ cosine similarity against completely
+        unrelated query text due to CLIP's text-embedding anisotropy.
+        Letting dense open the gate on its own caused OCR to fire (and
+        drag down fusion via its 0.55 weight) for images whose OCR text
+        had nothing to do with the query. Dense now only ever boosts an
+        already-established lexical/doc-type match.
         """
         if not keywords:
             return 0.0
@@ -464,21 +461,20 @@ class Retriever:
         )
 
         # ── Layer 2: Document-type match ───────────────────────────────────
-        # Does the query imply a document type AND does the OCR look like that?
-        q_doc_types  = query_doc_types(keywords)
+        q_doc_types   = query_doc_types(keywords)
         ocr_doc_types = classify_ocr_text(ocr_text)
         doc_type_score = 1.0 if (q_doc_types & ocr_doc_types) else 0.0
 
-        # ── Layer 3: Dense semantic assist (gated) ─────────────────────────
+        # ── Self-gate ─────────────────────────────────────────────────────
+        # Dense is boost-only — it cannot fire OCR scoring on its own.
+        if lexical == 0 and doc_type_score == 0:
+            return 0.0
+
+        # ── Layer 3: Dense semantic assist (only computed once gated in) ──
         dense = 0.0
         if ocr_emb is not None and len(ocr_emb) > 0:
             q_emb = embed_text(" ".join(keywords))
             dense = (float(np.dot(q_emb, np.array(ocr_emb, dtype=np.float32))) + 1) / 2
-
-        # ── Self-gate ──────────────────────────────────────────────────────
-        # Must have at least one layer firing
-        if lexical == 0 and doc_type_score == 0 and dense < OCR_DENSE_GATE:
-            return 0.0
 
         score = (
             OCR_LEXICAL_WEIGHT  * lexical

@@ -151,8 +151,21 @@ export async function uploadImage(
   const mime = `image/${ext === "jpg" ? "jpeg" : ext}`;
 
   const form = new FormData();
-  // @ts-ignore - RN FormData accepts this shape for file uploads
-  form.append("file", { uri, name, type: mime });
+
+  if (Platform.OS === "web") {
+    // On web `uri` is a blob:/data: URL from the file input. RN's
+    // { uri, name, type } descriptor isn't understood by the browser's
+    // fetch/FormData — it gets serialized to the literal string
+    // "[object Object]", which is exactly what the 422 was reporting.
+    // Fetching the uri gives us a real Blob to attach instead.
+    const blobRes = await fetch(uri);
+    const blob = await blobRes.blob();
+    const file = new File([blob], name, { type: blob.type || mime });
+    form.append("file", file);
+  } else {
+    // @ts-ignore - RN FormData accepts this shape for file uploads
+    form.append("file", { uri, name, type: mime });
+  }
 
   const res = await fetch(`${BASE_URL}/upload`, {
     method: "POST",
@@ -166,6 +179,7 @@ export async function uploadImage(
 
   return res.json();
 }
+
 
 // ── Albums ─────────────────────────────────────────────────────────────────
 
