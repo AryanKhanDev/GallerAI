@@ -103,43 +103,19 @@ export default function GalleryScreen() {
   const {
     isSelecting,
     exitSelection,
+    context,
   } =
     useSelectionStore();
 
-  const [
-    viewMode,
-    setViewMode,
-  ] =
-    useState<ViewMode>(
-      "grid"
-    );
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
-  const [
-    tagDraft,
-    setTagDraft,
-  ] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
 
-  const [
-    activeTags,
-    setActiveTags,
-  ] = useState<
-    string[]
-  >([]);
+  const [activeTags, setActiveTags] = useState<Array<string>>([]);
 
-  const [
-    selectedAlbum,
-    setSelectedAlbum,
-  ] =
-    useState<
-      Album | null
-    >(null);
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
 
-  const [
-    albumImages,
-    setAlbumImages,
-  ] = useState<
-    GalleryImage[]
-  >([]);
+  const [albumImages, setAlbumImages] = useState<Array<GalleryImage>>([]);
 
   const [
     actionSheet,
@@ -166,19 +142,11 @@ export default function GalleryScreen() {
   setRenameMode,
   ] = useState(false);
 
-  const [
-    pendingAlbumImageIds,
-    setPendingAlbumImageIds,
-  ] = useState<string[]>(
-    []
-  );
+  const [pendingAlbumImageIds, setPendingAlbumImageIds] = useState<Array<string>>([]);
 
-  const [
-  albumPickerMode,
-  setAlbumPickerMode,
-] = useState<
-  "pick" | "create" | null
->(null);
+  type AlbumPickerModeLocal = "pick" | "create" | null;
+
+  const [albumPickerMode, setAlbumPickerMode] = useState<AlbumPickerModeLocal>(null);
   const [viewerVisible, setViewerVisible] =
   useState(false);
 
@@ -305,12 +273,9 @@ export default function GalleryScreen() {
       }
     }
 
-  const tagDebounceRef =
-    useRef<
-      ReturnType<
-        typeof setTimeout
-      > | null
-    >(null);
+  type TimeoutHandle = ReturnType<typeof setTimeout>;
+
+  const tagDebounceRef = useRef<TimeoutHandle | null>(null);
 
   useEffect(() => {
     loadGallery();
@@ -362,11 +327,7 @@ export default function GalleryScreen() {
         "gallery"
       );
 
-    const scores:
-      Record<
-        string,
-        number
-      > = {};
+    const scores: { [key: string]: number } = {};
 
     result.results.forEach(
       (r) => {
@@ -377,11 +338,7 @@ export default function GalleryScreen() {
     );
 
     // Soft semantic narrowing
-    const combined:
-      Record<
-        string,
-        number
-      > = {};
+    const combined: { [key: string]: number } = {};
 
     Object.entries(
       scores
@@ -1071,6 +1028,7 @@ const viewerImages =
     images={
       albumImages
     }
+    selectionContext="album"
     emptyText="Album is empty"
     onPress={(img) => {
   if (isSelecting) return;
@@ -1358,7 +1316,9 @@ const viewerImages =
             </View>
           </View>
         </Modal>
-        {isSelecting && (
+        {isSelecting &&
+          (context === "gallery" ||
+            context === "album") && (
   <SelectionBar
     allIds={
       selectedAlbum
@@ -1407,6 +1367,9 @@ const viewerImages =
 }}
     onCancel={() =>
       exitSelection()
+    }
+    showSelectAll={
+      context === "album"
     }
   />
 )}

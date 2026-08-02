@@ -3,6 +3,12 @@
  *
  * Floating bar that appears whenever selection mode is active.
  * Shared between Gallery, Albums, and Chat.
+ *
+ * showSelectAll: controls the "All"/"Clear" toggle. It stays in the
+ * layout either way (so cancel/count/etc never shift position) but
+ * the whole pill — background included — is invisible and
+ * non-interactive when false, used to hide it on the main Gallery
+ * grid while keeping it in Chat and Album views.
  */
 
 import React, {
@@ -35,10 +41,7 @@ import { shareImages } from "../native/share";
 interface Props {
   allIds: string[];
 
-  imageUriMap: Record<
-    string,
-    string
-  >;
+  imageUriMap: Record<string, string>;
 
   onAddToAlbum: (
     ids: string[]
@@ -49,6 +52,8 @@ interface Props {
   ) => void;
 
   onCancel: () => void;
+
+  showSelectAll?: boolean;
 }
 
 export default function SelectionBar({
@@ -57,6 +62,7 @@ export default function SelectionBar({
   onAddToAlbum,
   onCreateAlbum,
   onCancel,
+  showSelectAll = true,
 }: Props) {
   const {
     selectedIds,
@@ -109,6 +115,12 @@ export default function SelectionBar({
 
   const handleSelectAll =
     () => {
+      if (
+        !showSelectAll
+      ) {
+        return;
+      }
+
       if (
         allSelected
       ) {
@@ -223,8 +235,21 @@ export default function SelectionBar({
           onPress={
             handleSelectAll
           }
-          style={
-            styles.selectAllBtn
+          style={[
+            styles.selectAllBtn,
+            !showSelectAll &&
+              styles.selectAllBtnHidden,
+          ]}
+          disabled={
+            !showSelectAll
+          }
+          accessibilityElementsHidden={
+            !showSelectAll
+          }
+          importantForAccessibility={
+            showSelectAll
+              ? "auto"
+              : "no-hide-descendants"
           }
         >
           <Text
@@ -437,6 +462,11 @@ const styles =
         radius.full,
       backgroundColor:
         colors.bg2,
+    },
+
+    selectAllBtnHidden: {
+      opacity: 0,
+      backgroundColor: "transparent",
     },
 
     selectAllText: {
