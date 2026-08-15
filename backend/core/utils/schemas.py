@@ -53,6 +53,12 @@ class ImageRecord(BaseModel):
         default_factory=list
     )
 
+    # NEW — Trash/Bin: soft-delete flag. True -> image lives only in
+    # the virtual "Bin" album and is excluded from gallery/search/chat
+    # everywhere else. This is the single source of truth for deletion
+    # state; nothing else tracks "deleted" independently.
+    is_deleted: bool = False
+
     indexed_at: datetime = Field(
         default_factory=datetime.utcnow
     )

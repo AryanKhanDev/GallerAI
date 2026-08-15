@@ -9,11 +9,19 @@
  * the whole pill — background included — is invisible and
  * non-interactive when false, used to hide it on the main Gallery
  * grid while keeping it in Chat and Album views.
+ *
+ * Delete: soft-deletes the current selection (moves to Bin). This is
+ * intentionally NOT a permanent delete — it just flips is_deleted on
+ * the backend, so it's fully reversible from the Bin. Confirms first,
+ * then exits selection and calls onDeleted so the screen that owns
+ * the current view (Gallery grid or an open Album) can refetch and
+ * make the images disappear immediately.
  */
 
 import React, {
   useEffect,
   useRef,
+  useState,
 } from "react";
 
 import {
@@ -37,6 +45,7 @@ import {
 } from "../utils/theme";
 
 import { shareImages } from "../native/share";
+import { deleteImage } from "../api/client";
 
 interface Props {
   allIds: string[];
@@ -54,6 +63,14 @@ interface Props {
   onCancel: () => void;
 
   showSelectAll?: boolean;
+
+  /** Called after the selected images have been successfully moved to
+   * the Bin, with the ids that were deleted. Use this to refetch
+   * whatever list is currently on screen (main gallery / open album)
+   * so the deleted images disappear immediately. Optional — screens
+   * that don't need to react (e.g. Chat, where results are historical
+   * messages) can omit it. */
+  onDeleted?: (ids: string[]) => void;
 }
 
 export default function SelectionBar({
@@ -63,6 +80,7 @@ export default function SelectionBar({
   onCreateAlbum,
   onCancel,
   showSelectAll = true,
+  onDeleted,
 }: Props) {
   const {
     selectedIds,
@@ -80,6 +98,11 @@ export default function SelectionBar({
         100
       )
     ).current;
+
+  const [
+    isDeleting,
+    setIsDeleting,
+  ] = useState(false);
 
   const count =
     selectedIds.size;
@@ -182,6 +205,54 @@ export default function SelectionBar({
           "Could not share the selected images"
         );
       }
+    };
+
+  const handleDelete =
+    () => {
+      const ids =
+        selectedArray();
+
+      if (
+        ids.length === 0
+      ) {
+        return;
+      }
+
+      Alert.alert(
+        "Move selected images to Bin?",
+        "The selected images will be moved to Bin. You can restore them later from the Bin.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Move to Bin",
+            style: "destructive",
+            onPress: async () => {
+              setIsDeleting(true);
+
+              try {
+                await Promise.all(
+                  ids.map((id) => deleteImage(id))
+                );
+
+                exitSelection();
+                onDeleted?.(ids);
+              } catch (err) {
+                console.error(err);
+
+                Alert.alert(
+                  "Error",
+                  "Could not move the selected images to Bin"
+                );
+              } finally {
+                setIsDeleting(false);
+              }
+            },
+          },
+        ]
+      );
     };
 
   return (
@@ -376,6 +447,46 @@ export default function SelectionBar({
             New Album
           </Text>
         </TouchableOpacity>
+
+        <View
+          style={
+            styles.actionDivider
+          }
+        />
+
+        <TouchableOpacity
+          style={[
+            styles.actionBtn,
+            (count === 0 ||
+              isDeleting) &&
+              styles.actionBtnDisabled,
+          ]}
+          disabled={
+            count === 0 ||
+            isDeleting
+          }
+          onPress={
+            handleDelete
+          }
+        >
+          <Text
+            style={[
+              styles.actionIcon,
+              styles.actionIconDestructive,
+            ]}
+          >
+            🗑
+          </Text>
+
+          <Text
+            style={[
+              styles.actionText,
+              styles.actionTextDestructive,
+            ]}
+          >
+            Delete
+          </Text>
+        </TouchableOpacity>
       </View>
     </Animated.View>
   );
@@ -529,6 +640,11 @@ const styles =
       fontSize: 18,
     },
 
+    actionIconDestructive: {
+      color:
+        colors.error,
+    },
+
     actionText: {
       color:
         colors.text0,
@@ -536,5 +652,10 @@ const styles =
         font.sm,
       fontWeight:
         font.medium,
+    },
+
+    actionTextDestructive: {
+      color:
+        colors.error,
     },
   });

@@ -350,6 +350,109 @@ export async function renameAlbum(
 
   return res.json();
 }
+// ── Trash / Bin ────────────────────────────────────────────────────────────
+
+/** Soft-delete: moves an image into the Bin. Reversible via restoreImage. */
+export async function deleteImage(
+  imageId: string
+): Promise<void> {
+  const res =
+    await fetch(
+      `${BASE_URL}/images/${imageId}/delete`,
+      {
+        method:
+          "POST",
+      }
+    );
+
+  if (!res.ok)
+    throw new Error(
+      `Delete image failed: ${res.status}`
+    );
+}
+
+/** Restores an image out of the Bin. */
+export async function restoreImage(
+  imageId: string
+): Promise<void> {
+  const res =
+    await fetch(
+      `${BASE_URL}/images/${imageId}/restore`,
+      {
+        method:
+          "POST",
+      }
+    );
+
+  if (!res.ok)
+    throw new Error(
+      `Restore image failed: ${res.status}`
+    );
+}
+
+/** Irreversibly deletes an image (file left on disk, but fully removed
+ * from the index, embeddings, OCR, metadata, and all albums). */
+export async function permanentlyDeleteImage(
+  imageId: string
+): Promise<void> {
+  const res =
+    await fetch(
+      `${BASE_URL}/images/${imageId}/permanent`,
+      {
+        method:
+          "DELETE",
+      }
+    );
+
+  if (!res.ok)
+    throw new Error(
+      `Permanent delete failed: ${res.status}`
+    );
+}
+
+/** Lists everything currently in the Bin. */
+export async function listBin(
+  limit = 200,
+  offset = 0
+): Promise<{
+  total: number;
+  images: GalleryImage[];
+}> {
+  const res =
+    await fetch(
+      `${BASE_URL}/bin?limit=${limit}&offset=${offset}`
+    );
+
+  if (!res.ok)
+    throw new Error(
+      `List bin failed: ${res.status}`
+    );
+
+  return res.json();
+}
+
+/** Permanently deletes everything currently in the Bin. Irreversible —
+ * confirm with the user before calling this. */
+export async function clearBin(): Promise<{
+  deleted: number;
+}> {
+  const res =
+    await fetch(
+      `${BASE_URL}/bin/clear`,
+      {
+        method:
+          "POST",
+      }
+    );
+
+  if (!res.ok)
+    throw new Error(
+      `Clear bin failed: ${res.status}`
+    );
+
+  return res.json();
+}
+
 // ── Health ─────────────────────────────────────────────────────────────────
 
 export async function health(): Promise<{

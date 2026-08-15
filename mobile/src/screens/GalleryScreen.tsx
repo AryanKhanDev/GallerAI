@@ -571,6 +571,46 @@ const viewerImages =
     }
   }
 
+  /**
+   * Refreshes whatever is currently on screen after a soft delete
+   * (SelectionBar's Delete action). Refetches fresh gallery data
+   * directly rather than reusing the `images` closure, since that
+   * closure is captured at render time and won't reflect the delete
+   * that just happened inside this same async call.
+   */
+  async function handleImagesDeleted() {
+    const fresh = await listImages(500);
+
+    setImages(
+      fresh.images,
+      fresh.total
+    );
+
+    if (selectedAlbum) {
+      try {
+        const full = await getAlbum(selectedAlbum.id);
+
+        const idSet = new Set(full.image_ids);
+
+        const matched = fresh.images.filter((img) =>
+          idSet.has(img.id)
+        );
+
+        const ordered = full.image_ids
+          .map((id) =>
+            matched.find((img) => img.id === id)
+          )
+          .filter(Boolean) as GalleryImage[];
+
+        setAlbumImages(ordered);
+      } catch {
+        // non-fatal — main gallery above already refreshed
+      }
+    }
+
+    loadAlbums();
+  }
+
   async function handleDeleteAlbum(
     album: Album
   ) {
@@ -1365,6 +1405,9 @@ const viewerImages =
     "create"
   );
 }}
+    onDeleted={
+      handleImagesDeleted
+    }
     onCancel={() =>
       exitSelection()
     }

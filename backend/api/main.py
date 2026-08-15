@@ -1,6 +1,6 @@
 """
 api/main.py
-GallерAI FastAPI server — Stage 2.
+GallерAI FastAPI server — Stage 2 + Trash/Bin.
 
 Endpoints:
   GET  /health                    → server status
@@ -10,13 +10,19 @@ Endpoints:
   GET  /images                    → list all indexed images
   POST /upload                    → upload + index a single image
   POST /ingest                    → trigger indexing of a directory
-  GET  /albums                    → list all albums
+  GET  /albums                    → list all albums (Bin always first)
   POST /albums                    → create album (manual or auto from query)
-  GET  /albums/{album_id}         → get album contents
+  GET  /albums/{album_id}         → get album contents (id="bin" works)
   PATCH /albums/{album_id}        → rename album
   POST /albums/{album_id}/add     → add images to album
   DELETE /albums/{album_id}/images/{image_id}  → remove image from album
   DELETE /albums/{album_id}       → delete album
+
+  POST   /images/{image_id}/delete     → soft-delete (move to Bin)
+  POST   /images/{image_id}/restore    → restore from Bin
+  DELETE /images/{image_id}/permanent  → permanently delete (irreversible)
+  GET    /bin                          → list Bin contents
+  POST   /bin/clear                    → permanently delete everything in Bin
 
 Run from repo root:
     uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
@@ -59,7 +65,7 @@ logger = get_logger("api")
 app = FastAPI(
     title="GallерAI",
     description="Local-first AI-powered image retrieval",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -78,6 +84,8 @@ _retriever: Optional[Retriever] = None
 _ingest_status: dict = {"running": False, "message": "idle", "indexed": 0}
 _albums_path = CACHE_DIR / "albums.json"
 
+BIN_ALBUM_ID = "bin"
+
 
 def get_store() -> ImageStore:
     global _store
@@ -93,8 +101,18 @@ def get_retriever() -> Retriever:
     return _retriever
 
 
+def _invalidate_retriever() -> None:
+    global _retriever
+    _retriever = None
+
+
 # ---------------------------------------------------------------------------
 # Album persistence (simple JSON file — no extra DB needed)
+#
+# NOTE: the Bin is intentionally NOT stored here. It is a virtual
+# album, derived live from ImageStore.get_bin() (i.e. from each
+# image's is_deleted flag). This keeps deletion state single-sourced
+# instead of syncing membership between albums.json and image rows.
 # ---------------------------------------------------------------------------
 
 def _load_albums() -> dict:
@@ -108,6 +126,42 @@ def _load_albums() -> dict:
 
 def _save_albums(albums: dict) -> None:
     _albums_path.write_text(json.dumps(albums, indent=2))
+
+
+def _strip_image_from_albums(image_id: str) -> None:
+    """Remove an image id from every real (non-Bin) album's membership.
+    Used before a permanent delete so albums never reference a row
+    that no longer exists."""
+    albums = _load_albums()
+    changed = False
+    for album in albums.values():
+        if image_id in album.get("image_ids", []):
+            album["image_ids"] = [i for i in album["image_ids"] if i != image_id]
+            if album.get("cover_image_id") == image_id:
+                remaining = album["image_ids"]
+                album["cover_image_id"] = remaining[0] if remaining else None
+            changed = True
+    if changed:
+        _save_albums(albums)
+
+
+def _bin_album() -> dict:
+    """Builds the virtual Bin album object on demand from current
+    is_deleted rows. Always appears first in /albums; cannot be
+    renamed or deleted (enforced at the endpoint level below)."""
+    store = get_store()
+    bin_records = store.get_bin()
+    ids = [r["id"] for r in bin_records]
+    return {
+        "id": BIN_ALBUM_ID,
+        "name": "🗑 Bin",
+        "description": "Deleted images. Restore them or delete permanently.",
+        "query": None,
+        "image_ids": ids,
+        "created_at": datetime.min.replace(tzinfo=timezone.utc).isoformat(),
+        "cover_image_id": ids[0] if ids else None,
+        "is_system": True,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +228,26 @@ class Album(BaseModel):
     image_ids: list[str]
     created_at: str
     cover_image_id: Optional[str] = None
+    is_system: bool = False   # True only for Bin — client hides rename/delete UI
+
+
+class DeleteImageResponse(BaseModel):
+    id: str
+    deleted: bool
+
+
+class RestoreImageResponse(BaseModel):
+    id: str
+    restored: bool
+
+
+class PermanentDeleteResponse(BaseModel):
+    id: str
+    permanently_deleted: bool
+
+
+class ClearBinResponse(BaseModel):
+    deleted: int
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +291,9 @@ def _gallery_image_response(record: dict) -> dict:
 
 def _serve_image(image_id: str, max_size: Optional[int] = None) -> Response:
     store = get_store()
-    all_records = store.get_all()
-    record = next((r for r in all_records if r["id"] == image_id), None)
+    # include_deleted: images sitting in the Bin must still be
+    # viewable (thumbnails, previews) until they're permanently deleted.
+    record = store.get_by_id(image_id, include_deleted=True)
 
     if not record:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -256,7 +331,7 @@ def health():
         "status": "ok",
         "indexed": store.count(),
         "ingest": _ingest_status,
-        "version": "0.2.0",
+        "version": "0.3.0",
     }
 
 
@@ -305,6 +380,7 @@ def get_thumbnail(image_id: str):
 @app.get("/images")
 def list_images(limit: int = 100, offset: int = 0):
     store = get_store()
+    # get_all() defaults to excluding Bin contents
     all_records = store.get_all()
     total = len(all_records)
     page = all_records[offset : offset + limit]
@@ -332,9 +408,16 @@ async def upload_image(file: UploadFile = File(...)):
     store = get_store()
 
     # Dedup: if this exact file is already indexed, just return it —
-    # no re-embedding, no duplicate on disk.
-    existing = next((r for r in store.get_all() if r["id"] == file_hash), None)
+    # no re-embedding, no duplicate on disk. include_deleted=True so
+    # this also catches a file that was previously moved to the Bin;
+    # re-uploading something you'd deleted should bring it back rather
+    # than silently insert a duplicate row with the same id.
+    existing = store.get_by_id(file_hash, include_deleted=True)
     if existing:
+        if existing.get("is_deleted"):
+            store.set_deleted(file_hash, False)
+            _invalidate_retriever()
+            existing["is_deleted"] = False
         return _gallery_image_response(existing)
 
     saved_path.write_bytes(raw)
@@ -380,8 +463,7 @@ async def upload_image(file: UploadFile = File(...)):
     store.upsert([rec])
 
     # Invalidate retriever so it picks up the new image
-    global _retriever
-    _retriever = None
+    _invalidate_retriever()
 
     logger.info(f"Uploaded + indexed image: {orig_name} ({file_hash[:8]})")
 
@@ -403,7 +485,7 @@ async def upload_image(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 def _run_ingest(directory: str, use_ocr: bool) -> None:
-    global _ingest_status, _store, _retriever
+    global _ingest_status, _store
     try:
         _ingest_status = {"running": True, "message": "Scanning directory…", "indexed": 0}
 
@@ -455,12 +537,13 @@ def _run_ingest(directory: str, use_ocr: bool) -> None:
             else:
                 r.ocr_text = None
                 r.ocr_embedding = zero_vec
+            r.is_deleted = False
             emb_i += 1
 
         store.upsert(records)
 
         # Invalidate retriever so it picks up new records
-        _retriever = None
+        _invalidate_retriever()
 
         count = store.count()
         _ingest_status = {
@@ -500,7 +583,9 @@ def ingest_status():
 @app.get("/albums")
 def list_albums():
     albums = _load_albums()
-    return {"albums": list(albums.values()), "total": len(albums)}
+    # Bin is always first, always present, never persisted to disk
+    all_albums = [_bin_album()] + list(albums.values())
+    return {"albums": all_albums, "total": len(all_albums)}
 
 
 @app.post("/albums", response_model=Album)
@@ -526,6 +611,9 @@ def create_album(req: AlbumCreateRequest):
 
 @app.get("/albums/{album_id}", response_model=Album)
 def get_album(album_id: str):
+    if album_id == BIN_ALBUM_ID:
+        return _bin_album()
+
     albums = _load_albums()
     if album_id not in albums:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -534,6 +622,12 @@ def get_album(album_id: str):
 
 @app.post("/albums/{album_id}/add")
 def add_to_album(album_id: str, req: AlbumAddRequest):
+    if album_id == BIN_ALBUM_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't add images to Bin directly — delete the image instead.",
+        )
+
     albums = _load_albums()
     if album_id not in albums:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -554,6 +648,12 @@ def rename_album(
     album_id: str,
     req: AlbumUpdateRequest
 ):
+    if album_id == BIN_ALBUM_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="Bin cannot be renamed"
+        )
+
     albums = _load_albums()
 
     if album_id not in albums:
@@ -576,6 +676,12 @@ def rename_album(
 
 @app.delete("/albums/{album_id}/images/{image_id}")
 def remove_from_album(album_id: str, image_id: str):
+    if album_id == BIN_ALBUM_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't remove images from Bin directly — restore the image instead.",
+        )
+
     albums = _load_albums()
     if album_id not in albums:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -597,6 +703,16 @@ def remove_from_album(album_id: str, image_id: str):
 
 @app.delete("/albums/{album_id}")
 def delete_album(album_id: str):
+    """
+    Deletes only the album object (the collection). Every image
+    contained in it stays fully intact — on disk, in LanceDB, in
+    semantic/OCR indexes, and in every other album it also belongs
+    to. This is NOT soft delete; there is nothing to restore because
+    nothing about the images themselves changed.
+    """
+    if album_id == BIN_ALBUM_ID:
+        raise HTTPException(status_code=400, detail="Bin cannot be deleted")
+
     albums = _load_albums()
     if album_id not in albums:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -604,3 +720,97 @@ def delete_album(album_id: str):
     del albums[album_id]
     _save_albums(albums)
     return {"deleted": album_id, "name": name}
+
+
+# ---------------------------------------------------------------------------
+# Trash / Bin — per-image soft delete, restore, permanent delete
+# ---------------------------------------------------------------------------
+
+@app.post("/images/{image_id}/delete", response_model=DeleteImageResponse)
+def delete_image(image_id: str):
+    """
+    Soft delete: moves the image into the Bin. It immediately
+    disappears from /images, /query, and every normal album view, but
+    the file on disk and all indexed data are untouched — fully
+    reversible via /images/{id}/restore.
+    """
+    store = get_store()
+    if not store.set_deleted(image_id, True):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    _invalidate_retriever()
+    logger.info(f"Image {image_id} moved to Bin")
+    return DeleteImageResponse(id=image_id, deleted=True)
+
+
+@app.post("/images/{image_id}/restore", response_model=RestoreImageResponse)
+def restore_image(image_id: str):
+    """
+    Restores an image out of the Bin. It becomes visible again in the
+    gallery, search, chat, and any album it previously belonged to
+    (album membership was never touched by the delete).
+    """
+    store = get_store()
+    if not store.set_deleted(image_id, False):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    _invalidate_retriever()
+    logger.info(f"Image {image_id} restored from Bin")
+    return RestoreImageResponse(id=image_id, restored=True)
+
+
+@app.delete("/images/{image_id}/permanent", response_model=PermanentDeleteResponse)
+def permanently_delete_image(image_id: str):
+    """
+    Irreversibly removes the image: LanceDB row (embedding, OCR text,
+    OCR embedding, metadata), and its id from every album's
+    image_ids. Does not require the image to currently be in the Bin,
+    but the UI should only expose this action from inside Bin.
+    """
+    store = get_store()
+    record = store.get_by_id(image_id, include_deleted=True)
+    if not record:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    _strip_image_from_albums(image_id)
+
+    if not store.permanently_delete(image_id):
+        raise HTTPException(status_code=500, detail="Could not permanently delete image")
+
+    _invalidate_retriever()
+    logger.info(f"Image {image_id} permanently deleted")
+    return PermanentDeleteResponse(id=image_id, permanently_deleted=True)
+
+
+@app.get("/bin")
+def list_bin(limit: int = 200, offset: int = 0):
+    """Lists the contents of the Bin (paginated), same shape as /images."""
+    store = get_store()
+    bin_records = store.get_bin()
+    total = len(bin_records)
+    page = bin_records[offset : offset + limit]
+
+    results = [_gallery_image_response(r) for r in page]
+
+    return {"total": total, "offset": offset, "limit": limit, "images": results}
+
+
+@app.post("/bin/clear", response_model=ClearBinResponse)
+def clear_bin():
+    """
+    Permanently deletes every image currently in the Bin. Irreversible.
+    The client is expected to confirm with the user before calling
+    this ("Delete all items permanently? This cannot be undone.").
+    """
+    store = get_store()
+    ids = [r["id"] for r in store.get_bin()]
+
+    deleted_count = 0
+    for image_id in ids:
+        _strip_image_from_albums(image_id)
+        if store.permanently_delete(image_id):
+            deleted_count += 1
+
+    _invalidate_retriever()
+    logger.info(f"Bin cleared — {deleted_count} images permanently deleted")
+    return ClearBinResponse(deleted=deleted_count)
