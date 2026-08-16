@@ -36,6 +36,10 @@ export default function ImageActionSheet({
   onViewFull,
 }: Props) {
   const { albums, addAlbum } = useAlbumStore();
+
+  // The Bin is a system album, not a user album — it must never be
+  // offered as an add-to-album / new-album target.
+  const pickableAlbums = albums.filter((a) => !a.is_system);
   const [showNewAlbum, setShowNewAlbum] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -118,7 +122,7 @@ export default function ImageActionSheet({
         {!showNewAlbum ? (
           <>
             <ScrollView style={styles.albumList} showsVerticalScrollIndicator={false}>
-              {albums.map((album) => (
+              {pickableAlbums.map((album) => (
                 <TouchableOpacity
                   key={album.id}
                   style={styles.albumRow}

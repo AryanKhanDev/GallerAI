@@ -73,6 +73,12 @@ export default function AlbumPickerModal({
   } =
     useSelectionStore();
 
+  // The Bin is a system album, not a user album — it must never be
+  // offered as an add-to-album / new-album target.
+  const pickableAlbums = albums.filter(
+    (a) => !a.is_system
+  );
+
   const [
     newName,
     setNewName,
@@ -247,7 +253,7 @@ export default function AlbumPickerModal({
               selected
             </Text>
 
-            {albums.length ===
+            {pickableAlbums.length ===
             0 ? (
               <View
                 style={
@@ -279,7 +285,7 @@ export default function AlbumPickerModal({
                   false
                 }
               >
-                {albums.map(
+                {pickableAlbums.map(
                   (
                     album
                   ) => (

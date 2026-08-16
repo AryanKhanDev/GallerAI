@@ -61,7 +61,15 @@ export interface Album {
   image_ids: string[];
   created_at: string;
   cover_image_id?: string;
+  /** True only for the system "Bin" album — never offered as an
+   * add-to-album target, cannot be renamed or deleted. */
+  is_system?: boolean;
 }
+
+/** The id backend always uses for the virtual "Bin" system album.
+ * Use this instead of the literal string "bin" when checking
+ * whether an Album is the Bin. */
+export const BIN_ALBUM_ID = "bin";
 
 export interface GalleryImage {
   id: string;

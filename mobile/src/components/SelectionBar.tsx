@@ -12,10 +12,11 @@
  *
  * Delete: soft-deletes the current selection (moves to Bin). This is
  * intentionally NOT a permanent delete — it just flips is_deleted on
- * the backend, so it's fully reversible from the Bin. Confirms first,
- * then exits selection and calls onDeleted so the screen that owns
- * the current view (Gallery grid or an open Album) can refetch and
- * make the images disappear immediately.
+ * the backend, so it's fully reversible from the Bin. Confirms via
+ * the shared cross-platform `confirm()` helper (works on Expo Web,
+ * unlike a raw Alert.alert), then exits selection and calls onDeleted
+ * so the screen that owns the current view (Gallery grid or an open
+ * Album) can refetch and make the images disappear immediately.
  */
 
 import React, {
@@ -45,7 +46,25 @@ import {
 } from "../utils/theme";
 
 import { shareImages } from "../native/share";
-import { deleteImage } from "../api/client";
+import {
+  deleteImage,
+  restoreImage,
+  permanentlyDeleteImage,
+} from "../api/client";
+import { confirm, notify } from "../utils/dialog";
+
+/**
+ * Chat encodes selection ids as `${messageId}::${imageId}` (see
+ * ChatScreen.chatSelectionId) so the same photo shown in two
+ * different response bubbles gets independent selection identities.
+ * Gallery/Album ids never contain "::", so this is a safe no-op for
+ * them. Always decode before using an id for an API call or a uri
+ * lookup — selectedArray()/allIds may contain either shape.
+ */
+function toRealImageId(id: string): string {
+  const idx = id.indexOf("::");
+  return idx === -1 ? id : id.slice(idx + 2);
+}
 
 interface Props {
   allIds: string[];
@@ -65,12 +84,18 @@ interface Props {
   showSelectAll?: boolean;
 
   /** Called after the selected images have been successfully moved to
-   * the Bin, with the ids that were deleted. Use this to refetch
-   * whatever list is currently on screen (main gallery / open album)
-   * so the deleted images disappear immediately. Optional — screens
-   * that don't need to react (e.g. Chat, where results are historical
-   * messages) can omit it. */
+   * the Bin (or, when isBin is true, restored from it / permanently
+   * deleted), with the ids affected. Use this to refetch whatever
+   * list is currently on screen (main gallery / open album) so the
+   * change is reflected immediately. Optional — screens that don't
+   * need to react (e.g. Chat, where results are historical messages)
+   * can omit it. */
   onDeleted?: (ids: string[]) => void;
+
+  /** True when the currently open view IS the Bin — swaps the normal
+   * Add to Album / Share / New Album / Delete row for Restore / Delete
+   * Permanently instead. */
+  isBin?: boolean;
 }
 
 export default function SelectionBar({
@@ -81,6 +106,7 @@ export default function SelectionBar({
   onCancel,
   showSelectAll = true,
   onDeleted,
+  isBin = false,
 }: Props) {
   const {
     selectedIds,
@@ -174,7 +200,7 @@ export default function SelectionBar({
 
       try {
         const uris = ids
-          .map((id) => imageUriMap[id])
+          .map((id) => imageUriMap[toRealImageId(id)])
           .filter(
             (uri): uri is string =>
               !!uri
@@ -208,7 +234,7 @@ export default function SelectionBar({
     };
 
   const handleDelete =
-    () => {
+    async () => {
       const ids =
         selectedArray();
 
@@ -218,41 +244,113 @@ export default function SelectionBar({
         return;
       }
 
-      Alert.alert(
-        "Move selected images to Bin?",
-        "The selected images will be moved to Bin. You can restore them later from the Bin.",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Move to Bin",
-            style: "destructive",
-            onPress: async () => {
-              setIsDeleting(true);
+      const confirmed =
+        await confirm(
+          "Move selected images to Bin?",
+          "The selected images will be moved to Bin. You can restore them later from the Bin.",
+          "Move to Bin"
+        );
 
-              try {
-                await Promise.all(
-                  ids.map((id) => deleteImage(id))
-                );
+      if (!confirmed) {
+        return;
+      }
 
-                exitSelection();
-                onDeleted?.(ids);
-              } catch (err) {
-                console.error(err);
+      setIsDeleting(true);
 
-                Alert.alert(
-                  "Error",
-                  "Could not move the selected images to Bin"
-                );
-              } finally {
-                setIsDeleting(false);
-              }
-            },
-          },
-        ]
-      );
+      try {
+        await Promise.all(
+          ids.map((id) => deleteImage(toRealImageId(id)))
+        );
+
+        exitSelection();
+        onDeleted?.(ids);
+      } catch (err) {
+        console.error(err);
+
+        notify(
+          "Error",
+          "Could not move the selected images to Bin"
+        );
+      } finally {
+        setIsDeleting(false);
+      }
+    };
+
+  const handleRestore =
+    async () => {
+      const ids =
+        selectedArray();
+
+      if (
+        ids.length === 0
+      ) {
+        return;
+      }
+
+      setIsDeleting(true);
+
+      try {
+        await Promise.all(
+          ids.map((id) => restoreImage(toRealImageId(id)))
+        );
+
+        exitSelection();
+        onDeleted?.(ids);
+      } catch (err) {
+        console.error(err);
+
+        notify(
+          "Error",
+          "Could not restore the selected images"
+        );
+      } finally {
+        setIsDeleting(false);
+      }
+    };
+
+  const handlePermanentDelete =
+    async () => {
+      const ids =
+        selectedArray();
+
+      if (
+        ids.length === 0
+      ) {
+        return;
+      }
+
+      const confirmed =
+        await confirm(
+          ids.length > 1
+            ? `Delete ${ids.length} images permanently?`
+            : "Delete permanently?",
+          "This cannot be undone.",
+          "Delete Permanently"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setIsDeleting(true);
+
+      try {
+        await Promise.all(
+          ids.map((id) => permanentlyDeleteImage(toRealImageId(id)))
+        );
+
+        exitSelection();
+        onDeleted?.(ids);
+      } catch (err) {
+        console.error(err);
+
+        notify(
+          "Error",
+          "Could not permanently delete the selected images"
+        );
+      } finally {
+        setIsDeleting(false);
+      }
     };
 
   return (
@@ -342,151 +440,229 @@ export default function SelectionBar({
           styles.actions
         }
       >
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            count === 0 &&
-              styles.actionBtnDisabled,
-          ]}
-          disabled={
-            count === 0
-          }
-          onPress={() =>
-            onAddToAlbum(
-              selectedArray()
-            )
-          }
-        >
-          <Text
-            style={
-              styles.actionIcon
-            }
-          >
-            ＋
-          </Text>
+        {isBin ? (
+          <>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                (count === 0 ||
+                  isDeleting) &&
+                  styles.actionBtnDisabled,
+              ]}
+              disabled={
+                count === 0 ||
+                isDeleting
+              }
+              onPress={
+                handleRestore
+              }
+            >
+              <Text
+                style={
+                  styles.actionIcon
+                }
+              >
+                ↺
+              </Text>
 
-          <Text
-            style={
-              styles.actionText
-            }
-          >
-            Add to Album
-          </Text>
-        </TouchableOpacity>
+              <Text
+                style={
+                  styles.actionText
+                }
+              >
+                Restore
+              </Text>
+            </TouchableOpacity>
 
-        <View
-          style={
-            styles.actionDivider
-          }
-        />
+            <View
+              style={
+                styles.actionDivider
+              }
+            />
 
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            count === 0 &&
-              styles.actionBtnDisabled,
-          ]}
-          disabled={
-            count === 0
-          }
-          onPress={
-            handleShare
-          }
-        >
-          <Text
-            style={
-              styles.actionIcon
-            }
-          >
-            ↗
-          </Text>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                (count === 0 ||
+                  isDeleting) &&
+                  styles.actionBtnDisabled,
+              ]}
+              disabled={
+                count === 0 ||
+                isDeleting
+              }
+              onPress={
+                handlePermanentDelete
+              }
+            >
+              <Text
+                style={[
+                  styles.actionIcon,
+                  styles.actionIconDestructive,
+                ]}
+              >
+                🗑
+              </Text>
 
-          <Text
-            style={
-              styles.actionText
-            }
-          >
-            Share
-          </Text>
-        </TouchableOpacity>
+              <Text
+                style={[
+                  styles.actionText,
+                  styles.actionTextDestructive,
+                ]}
+              >
+                Delete Permanently
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                count === 0 &&
+                  styles.actionBtnDisabled,
+              ]}
+              disabled={
+                count === 0
+              }
+              onPress={() =>
+                onAddToAlbum(
+                  selectedArray().map(toRealImageId)
+                )
+              }
+            >
+              <Text
+                style={
+                  styles.actionIcon
+                }
+              >
+                ＋
+              </Text>
 
-        <View
-          style={
-            styles.actionDivider
-          }
-        />
+              <Text
+                style={
+                  styles.actionText
+                }
+              >
+                Add to Album
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            count === 0 &&
-              styles.actionBtnDisabled,
-          ]}
-          disabled={
-            count === 0
-          }
-          onPress={() =>
-            onCreateAlbum(
-              selectedArray()
-            )
-          }
-        >
-          <Text
-            style={
-              styles.actionIcon
-            }
-          >
-            ⊞
-          </Text>
+            <View
+              style={
+                styles.actionDivider
+              }
+            />
 
-          <Text
-            style={
-              styles.actionText
-            }
-          >
-            New Album
-          </Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                count === 0 &&
+                  styles.actionBtnDisabled,
+              ]}
+              disabled={
+                count === 0
+              }
+              onPress={
+                handleShare
+              }
+            >
+              <Text
+                style={
+                  styles.actionIcon
+                }
+              >
+                ↗
+              </Text>
 
-        <View
-          style={
-            styles.actionDivider
-          }
-        />
+              <Text
+                style={
+                  styles.actionText
+                }
+              >
+                Share
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            (count === 0 ||
-              isDeleting) &&
-              styles.actionBtnDisabled,
-          ]}
-          disabled={
-            count === 0 ||
-            isDeleting
-          }
-          onPress={
-            handleDelete
-          }
-        >
-          <Text
-            style={[
-              styles.actionIcon,
-              styles.actionIconDestructive,
-            ]}
-          >
-            🗑
-          </Text>
+            <View
+              style={
+                styles.actionDivider
+              }
+            />
 
-          <Text
-            style={[
-              styles.actionText,
-              styles.actionTextDestructive,
-            ]}
-          >
-            Delete
-          </Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                count === 0 &&
+                  styles.actionBtnDisabled,
+              ]}
+              disabled={
+                count === 0
+              }
+              onPress={() =>
+                onCreateAlbum(
+                  selectedArray().map(toRealImageId)
+                )
+              }
+            >
+              <Text
+                style={
+                  styles.actionIcon
+                }
+              >
+                ⊞
+              </Text>
+
+              <Text
+                style={
+                  styles.actionText
+                }
+              >
+                New Album
+              </Text>
+            </TouchableOpacity>
+
+            <View
+              style={
+                styles.actionDivider
+              }
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                (count === 0 ||
+                  isDeleting) &&
+                  styles.actionBtnDisabled,
+              ]}
+              disabled={
+                count === 0 ||
+                isDeleting
+              }
+              onPress={
+                handleDelete
+              }
+            >
+              <Text
+                style={[
+                  styles.actionIcon,
+                  styles.actionIconDestructive,
+                ]}
+              >
+                🗑
+              </Text>
+
+              <Text
+                style={[
+                  styles.actionText,
+                  styles.actionTextDestructive,
+                ]}
+              >
+                Delete
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </Animated.View>
   );

@@ -43,6 +43,16 @@ interface Props {
 
   onPress?: () => void;
   onLongPress?: () => void;
+
+  /** Fired exactly once, at the moment THIS image starts a brand new
+   * selection session (i.e. when enterSelection is about to be
+   * called). Purely informational — does not change selection
+   * behavior. Callers that need to know precisely which on-screen
+   * item began the selection (e.g. Chat, to scope "Select All" to
+   * the correct response bubble even when the same image id appears
+   * in more than one bubble) can use this instead of inferring it
+   * from selectedIds after the fact. */
+  onSelectStart?: (id: string) => void;
 }
 
 export default function SelectableImage({
@@ -54,6 +64,7 @@ export default function SelectableImage({
   selectionContext,
   onPress,
   onLongPress,
+  onSelectStart,
 }: Props) {
   const {
     isSelecting,
@@ -213,6 +224,8 @@ export default function SelectableImage({
         selectionContext
       );
 
+      onSelectStart?.(id);
+
       return;
     }
 
@@ -223,6 +236,7 @@ export default function SelectableImage({
     id,
     selectionContext,
     onLongPress,
+    onSelectStart,
   ]);
 
   const opacity =

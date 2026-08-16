@@ -1,13 +1,6 @@
 """
 core/ingest/store.py
 Dense OCR compatible LanceDB storage.
-
-Trash/Bin: `is_deleted` is a column on every row (soft-delete flag).
-get_all() excludes soft-deleted rows by default, so every existing
-caller (gallery listing, retriever's semantic/OCR/metadata scoring,
-/upload's dedup check) stays correct automatically — nothing else in
-the codebase needs to know Bin exists unless it explicitly opts in
-via include_deleted=True.
 """
 
 from __future__ import annotations

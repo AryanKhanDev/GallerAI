@@ -95,10 +95,27 @@ export default function ChatScreen() {
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const colors = getColors(mode);
   const styles = createStyles(colors);
-  // Only care about `context` here — used to make sure this screen's
-  // SelectionBar only renders when the active selection belongs to chat,
-  // since Chat and Gallery are both mounted simultaneously in the pager.
+  // `context` makes sure this screen's SelectionBar only renders when
+  // the active selection belongs to chat, since Chat and Gallery are
+  // both mounted simultaneously in the pager. `selectedIds` is used to
+  // work out which response bubble the active selection started in, so
+  // "Select All" can be scoped to just that bubble — see
+  // currentBubbleImageIds below.
   const { isSelecting, context } = useSelectionStore();
+
+  // Tracks which response bubble the active selection started in, set
+  // directly from the long-press that begins selection (via
+  // SelectableImage's onSelectStart) rather than being inferred from
+  // shared image ids — inference broke whenever the same photo
+  // appeared in more than one bubble's results, since it couldn't
+  // tell which bubble was actually pressed. Reset once selection ends.
+  const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isSelecting) {
+      setActiveBubbleId(null);
+    }
+  }, [isSelecting]);
 
   const [input, setInput] = useState("");
 
@@ -155,23 +172,58 @@ export default function ChatScreen() {
   };
 
   // ── Selection helpers ─────────────────────────────────────────────────
-  // All images ever rendered in this chat (deduped, in first-seen order),
-  // and a uri map keyed by id — both required by SelectionBar.
+  // Selection identities in chat are `${messageId}::${imageId}` — NOT
+  // the raw image id. Two different response bubbles can show the same
+  // underlying photo (same image id); keying selection on the raw id
+  // would make selecting it in one bubble show it as selected in every
+  // other bubble containing that same photo too, and would let Select
+  // All leak across bubbles via that shared id. The composite key makes
+  // every on-screen image instance independently selectable regardless
+  // of duplicate photos. SelectionBar decodes back to the real image id
+  // (via toRealImageId) before calling any backend API or looking up a
+  // uri, so nothing downstream needs to know this encoding exists.
+  const chatSelectionId = (
+    messageId: string,
+    imageId: string
+  ) => `${messageId}::${imageId}`;
+
+  // All (composite) selection ids ever rendered in this chat, and a uri
+  // map keyed by the REAL image id (not composite) — both required by
+  // SelectionBar. The uri map stays real-id-keyed since SelectionBar
+  // decodes before looking anything up in it.
   const allChatImageIds = React.useMemo(() => {
-    const seen = new Set<string>();
     const ids: string[] = [];
 
     messages.forEach((m) => {
       m.images?.forEach((img) => {
-        if (!seen.has(img.id)) {
-          seen.add(img.id);
-          ids.push(img.id);
-        }
+        ids.push(chatSelectionId(m.id, img.id));
       });
     });
 
     return ids;
   }, [messages]);
+
+  // "Select All" must only select images from the response bubble the
+  // current selection started in (selection should never span multiple
+  // response bubbles). Scoped directly by activeBubbleId (the message
+  // id captured at the moment selection began — see onSelectStart
+  // below), NOT by looking up which message contains a selected image
+  // id: that lookup breaks whenever the same photo appears in more
+  // than one bubble's results, since any bubble containing that id
+  // would match. Falls back to allChatImageIds if nothing is active
+  // yet — at that point isSelecting is false anyway, so SelectionBar
+  // isn't rendered and this value isn't used.
+  const currentBubbleImageIds = React.useMemo(() => {
+    const owningMessage = messages.find(
+      (m) => m.id === activeBubbleId
+    );
+
+    return owningMessage
+      ? (owningMessage.images ?? []).map((img) =>
+          chatSelectionId(owningMessage.id, img.id)
+        )
+      : allChatImageIds;
+  }, [messages, activeBubbleId, allChatImageIds]);
 
   const chatImageUriMap = React.useMemo(() => {
     const map: Record<string, string> = {};
@@ -506,10 +558,13 @@ export default function ChatScreen() {
                   (img) => (
                     <SelectableImage
                       key={img.id}
-                      id={img.id}
+                      id={chatSelectionId(item.id, img.id)}
                       thumbnailUrl={img.thumbnail_url}
                       size={THUMB}
                       selectionContext="chat"
+                      onSelectStart={() =>
+                        setActiveBubbleId(item.id)
+                      }
                       onPress={() => {
                         setViewerImages(
                           item.images!.map((i) =>
@@ -754,7 +809,7 @@ export default function ChatScreen() {
         context === "chat" && (
           <SelectionBar
             allIds={
-              allChatImageIds
+              currentBubbleImageIds
             }
             imageUriMap={
               chatImageUriMap

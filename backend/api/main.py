@@ -1,6 +1,6 @@
 """
 api/main.py
-GallерAI FastAPI server — Stage 2 + Trash/Bin.
+GallерAI FastAPI server — Stage 2.
 
 Endpoints:
   GET  /health                    → server status
@@ -10,9 +10,9 @@ Endpoints:
   GET  /images                    → list all indexed images
   POST /upload                    → upload + index a single image
   POST /ingest                    → trigger indexing of a directory
-  GET  /albums                    → list all albums (Bin always first)
+  GET  /albums                    → list all albums
   POST /albums                    → create album (manual or auto from query)
-  GET  /albums/{album_id}         → get album contents (id="bin" works)
+  GET  /albums/{album_id}         → get album contents
   PATCH /albums/{album_id}        → rename album
   POST /albums/{album_id}/add     → add images to album
   DELETE /albums/{album_id}/images/{image_id}  → remove image from album
@@ -65,7 +65,7 @@ logger = get_logger("api")
 app = FastAPI(
     title="GallерAI",
     description="Local-first AI-powered image retrieval",
-    version="0.3.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -101,18 +101,8 @@ def get_retriever() -> Retriever:
     return _retriever
 
 
-def _invalidate_retriever() -> None:
-    global _retriever
-    _retriever = None
-
-
 # ---------------------------------------------------------------------------
 # Album persistence (simple JSON file — no extra DB needed)
-#
-# NOTE: the Bin is intentionally NOT stored here. It is a virtual
-# album, derived live from ImageStore.get_bin() (i.e. from each
-# image's is_deleted flag). This keeps deletion state single-sourced
-# instead of syncing membership between albums.json and image rows.
 # ---------------------------------------------------------------------------
 
 def _load_albums() -> dict:
@@ -331,7 +321,7 @@ def health():
         "status": "ok",
         "indexed": store.count(),
         "ingest": _ingest_status,
-        "version": "0.3.0",
+        "version": "0.2.0",
     }
 
 
@@ -380,7 +370,6 @@ def get_thumbnail(image_id: str):
 @app.get("/images")
 def list_images(limit: int = 100, offset: int = 0):
     store = get_store()
-    # get_all() defaults to excluding Bin contents
     all_records = store.get_all()
     total = len(all_records)
     page = all_records[offset : offset + limit]
@@ -407,6 +396,12 @@ async def upload_image(file: UploadFile = File(...)):
 
     store = get_store()
 
+    # Declared once at the top since it's (potentially) assigned to
+    # from two different branches below (the Bin-restore-on-reupload
+    # path and the normal new-upload path) — Python doesn't allow
+    # `global _retriever` to be declared twice in the same function.
+    global _retriever
+
     # Dedup: if this exact file is already indexed, just return it —
     # no re-embedding, no duplicate on disk. include_deleted=True so
     # this also catches a file that was previously moved to the Bin;
@@ -416,7 +411,7 @@ async def upload_image(file: UploadFile = File(...)):
     if existing:
         if existing.get("is_deleted"):
             store.set_deleted(file_hash, False)
-            _invalidate_retriever()
+            _retriever = None
             existing["is_deleted"] = False
         return _gallery_image_response(existing)
 
@@ -462,8 +457,9 @@ async def upload_image(file: UploadFile = File(...)):
 
     store.upsert([rec])
 
-    # Invalidate retriever so it picks up the new image
-    _invalidate_retriever()
+    # Invalidate retriever so it picks up the new image (already
+    # declared global at the top of this function)
+    _retriever = None
 
     logger.info(f"Uploaded + indexed image: {orig_name} ({file_hash[:8]})")
 
@@ -485,7 +481,7 @@ async def upload_image(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 def _run_ingest(directory: str, use_ocr: bool) -> None:
-    global _ingest_status, _store
+    global _ingest_status, _store, _retriever
     try:
         _ingest_status = {"running": True, "message": "Scanning directory…", "indexed": 0}
 
@@ -543,7 +539,7 @@ def _run_ingest(directory: str, use_ocr: bool) -> None:
         store.upsert(records)
 
         # Invalidate retriever so it picks up new records
-        _invalidate_retriever()
+        _retriever = None
 
         count = store.count()
         _ingest_status = {
@@ -738,7 +734,8 @@ def delete_image(image_id: str):
     if not store.set_deleted(image_id, True):
         raise HTTPException(status_code=404, detail="Image not found")
 
-    _invalidate_retriever()
+    global _retriever
+    _retriever = None
     logger.info(f"Image {image_id} moved to Bin")
     return DeleteImageResponse(id=image_id, deleted=True)
 
@@ -754,7 +751,8 @@ def restore_image(image_id: str):
     if not store.set_deleted(image_id, False):
         raise HTTPException(status_code=404, detail="Image not found")
 
-    _invalidate_retriever()
+    global _retriever
+    _retriever = None
     logger.info(f"Image {image_id} restored from Bin")
     return RestoreImageResponse(id=image_id, restored=True)
 
@@ -777,7 +775,8 @@ def permanently_delete_image(image_id: str):
     if not store.permanently_delete(image_id):
         raise HTTPException(status_code=500, detail="Could not permanently delete image")
 
-    _invalidate_retriever()
+    global _retriever
+    _retriever = None
     logger.info(f"Image {image_id} permanently deleted")
     return PermanentDeleteResponse(id=image_id, permanently_deleted=True)
 
@@ -811,6 +810,7 @@ def clear_bin():
         if store.permanently_delete(image_id):
             deleted_count += 1
 
-    _invalidate_retriever()
+    global _retriever
+    _retriever = None
     logger.info(f"Bin cleared — {deleted_count} images permanently deleted")
     return ClearBinResponse(deleted=deleted_count)

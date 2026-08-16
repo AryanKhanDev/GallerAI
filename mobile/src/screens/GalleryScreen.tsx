@@ -50,9 +50,13 @@ import {
   removeFromAlbum,
   renameAlbum,
   getAlbum,
+  listBin,
+  BIN_ALBUM_ID,
   GalleryImage,
   Album,
 } from "../api/client";
+
+import { confirm, notify } from "../utils/dialog";
 
 import ImageActionSheet from "../components/ImageActionSheet";
 import ImageGrid from "../components/ImageGrid";
@@ -528,6 +532,21 @@ const viewerImages =
       album
     );
 
+    // Bin is special: its contents are soft-deleted images, which
+    // are (by design) excluded from the main gallery `images` state.
+    // Cross-referencing Bin's image_ids against `images` — like
+    // every other album below — would therefore always come up
+    // empty. Fetch Bin's own image data directly instead.
+    if (album.id === BIN_ALBUM_ID) {
+      try {
+        const data = await listBin(500);
+        setAlbumImages(data.images);
+      } catch {
+        notify("Error", "Could not load Bin");
+      }
+      return;
+    }
+
     try {
       const full =
         await getAlbum(
@@ -586,7 +605,16 @@ const viewerImages =
       fresh.total
     );
 
-    if (selectedAlbum) {
+    if (selectedAlbum?.id === BIN_ALBUM_ID) {
+      // Re-deleting (or deleting) while already viewing Bin —
+      // refetch Bin directly, same reasoning as openAlbum() above.
+      try {
+        const data = await listBin(500);
+        setAlbumImages(data.images);
+      } catch {
+        // non-fatal — main gallery above already refreshed
+      }
+    } else if (selectedAlbum) {
       try {
         const full = await getAlbum(selectedAlbum.id);
 
@@ -614,48 +642,34 @@ const viewerImages =
   async function handleDeleteAlbum(
     album: Album
   ) {
-    Alert.alert(
-      `Delete "${album.name}"?`,
-      "This removes the album, not the photos.",
-      [
-        {
-          text: "Cancel",
-          style:
-            "cancel",
-        },
-        {
-          text: "Delete",
-          style:
-            "destructive",
-          onPress:
-            async () => {
-              try {
-                await deleteAlbum(
-                  album.id
-                );
+    // The Bin is a system album — it can never be deleted. The
+    // backend already rejects this, but we guard here too so no
+    // confirmation dialog even appears for it.
+    if (album.is_system) {
+      return;
+    }
 
-                removeAlbum(
-                  album.id
-                );
-
-                if (
-                  selectedAlbum?.id ===
-                  album.id
-                ) {
-                  setSelectedAlbum(
-                    null
-                  );
-                }
-              } catch {
-                Alert.alert(
-                  "Error",
-                  "Could not delete album"
-                );
-              }
-            },
-        },
-      ]
+    const confirmed = await confirm(
+      "Delete album?",
+      "This will permanently delete the album. The images inside it will not be deleted.",
+      "Delete Album"
     );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteAlbum(album.id);
+
+      removeAlbum(album.id);
+
+      if (selectedAlbum?.id === album.id) {
+        setSelectedAlbum(null);
+      }
+    } catch {
+      notify("Error", "Could not delete album");
+    }
   }
   
   
@@ -701,7 +715,9 @@ const viewerImages =
             : "GallerAI"}
         </Text>
 
-        {selectedAlbum && (
+        {/* Bin's name is never tappable-to-rename — it's a
+            system album and can never be renamed. */}
+        {selectedAlbum && !selectedAlbum.is_system && (
           <TouchableOpacity
             onPress={() => {
               setRenameMode(
@@ -729,6 +745,20 @@ const viewerImages =
               {selectedAlbum.name}
             </Text>
           </TouchableOpacity>
+        )}
+
+        {selectedAlbum && selectedAlbum.is_system && (
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color:
+                  colors.text0,
+              },
+            ]}
+          >
+            {selectedAlbum.name}
+          </Text>
         )}
 
           {!selectedAlbum &&
@@ -1407,6 +1437,9 @@ const viewerImages =
 }}
     onDeleted={
       handleImagesDeleted
+    }
+    isBin={
+      selectedAlbum?.id === BIN_ALBUM_ID
     }
     onCancel={() =>
       exitSelection()
