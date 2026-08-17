@@ -525,6 +525,46 @@ const viewerImages =
   displayedImages.map(
     (img) => img.image_url
   );
+
+// `images` (the main gallery list) already excludes soft-deleted
+// (Bin) images — see loadGallery/listImages. Album membership in
+// album.image_ids is intentionally NOT touched by a soft delete (so
+// restore has something to restore to), so the raw image_ids.length
+// still counts deleted photos. The badge shown in the Albums list
+// should reflect what's actually visible, so we cross-reference
+// against `images` here — the same approach openAlbum already uses
+// to filter deleted images out of an opened album's contents.
+// Bin itself is the one exception: its image_ids ARE the deleted
+// photos, so its count is always the raw length, unfiltered.
+const visibleImageIdSet =
+  React.useMemo(
+    () =>
+      new Set(
+        images.map(
+          (img) => img.id
+        )
+      ),
+    [images]
+  );
+
+function visibleAlbumCount(
+  album: Album
+): number {
+  if (
+    album.id === BIN_ALBUM_ID ||
+    album.is_system
+  ) {
+    return album.image_ids
+      .length;
+  }
+
+  return album.image_ids.filter(
+    (id) =>
+      visibleImageIdSet.has(
+        id
+      )
+  ).length;
+}
   async function openAlbum(
     album: Album
   ) {
@@ -1254,8 +1294,9 @@ const viewerImages =
                       ]}
                     >
                       {
-                        album.image_ids
-                          .length
+                        visibleAlbumCount(
+                          album
+                        )
                       }{" "}
                       photos
                     </Text>

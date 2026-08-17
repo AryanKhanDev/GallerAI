@@ -565,6 +565,10 @@ export default function ChatScreen() {
                       onSelectStart={() =>
                         setActiveBubbleId(item.id)
                       }
+                      ringEnabled={
+                        !activeBubbleId ||
+                        activeBubbleId === item.id
+                      }
                       onPress={() => {
                         setViewerImages(
                           item.images!.map((i) =>

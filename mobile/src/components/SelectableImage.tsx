@@ -53,6 +53,16 @@ interface Props {
    * in more than one bubble) can use this instead of inferring it
    * from selectedIds after the fact. */
   onSelectStart?: (id: string) => void;
+
+  /** Whether this instance is allowed to show the "you can tap this"
+   * ring/dim while selection mode is active. Defaults to true
+   * (existing Gallery/Album behavior — every image in the grid is
+   * part of the same selectable set). Chat passes false for images
+   * outside the response bubble the current selection started in,
+   * since selection there is scoped per-bubble and showing the ring
+   * on every bubble falsely implies they're all part of one
+   * selectable set. */
+  ringEnabled?: boolean;
 }
 
 export default function SelectableImage({
@@ -65,6 +75,7 @@ export default function SelectableImage({
   onPress,
   onLongPress,
   onSelectStart,
+  ringEnabled = true,
 }: Props) {
   const {
     isSelecting,
@@ -81,7 +92,8 @@ export default function SelectableImage({
   const activeInContext =
     isSelecting &&
     context ===
-      selectionContext;
+      selectionContext &&
+    ringEnabled;
 
   const scaleAnim =
     useRef(
