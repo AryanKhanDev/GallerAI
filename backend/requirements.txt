@@ -1,11 +1,15 @@
-# GallерAI — Stage 1 dependencies
-# Mirrors pyproject.toml [project.dependencies]
-# Use one or the other — both are kept in sync.
+# GallerAI — Stage 1 dependencies
 #
-# Windows + CPU setup:
+# Install with:
+#   pip install -r backend/requirements.txt
+#
+# Windows:
 #   python -m venv .venv
 #   .venv\Scripts\activate
-#   pip install -r requirements.txt
+#
+# macOS / Linux:
+#   python3 -m venv .venv
+#   source .venv/bin/activate
 
 # Core AI
 open-clip-torch>=2.24.0
@@ -21,17 +25,20 @@ paddlepaddle>=2.6.0
 paddleocr>=2.7.3
 
 # Image handling
-Pillow>=10.1.0           # 10.1+ for .avif support
+Pillow>=10.1.0
+# 10.1+ for .avif support
 
 # Data / schemas
 pydantic>=2.0.0
 numpy>=1.26.0
 pandas>=2.0.0
 
-# API — multipart form parsing, required for /upload
+# API
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
 python-multipart>=0.0.9
 
 # Dev / testing
 pytest>=7.4.0
 pytest-cov
-rich                           # Pretty CLI output (optional)
+rich
