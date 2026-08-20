@@ -1,9 +1,8 @@
-````markdown
 # GALLERAI
 
 An AI-powered local gallery that combines visual-semantic retrieval, OCR, and image metadata to enable natural-language search and intelligent management of personal image collections.
 
-**User Query → Query Analysis → Semantic / OCR / Metadata Retrieval → Hybrid Scoring → Confidence Filtering → Results**
+**User Query → Semantic / OCR / Metadata Retrieval → Hybrid Scoring → Confidence Filtering → Results**
 
 ## Architecture
 
@@ -53,7 +52,6 @@ This distinction allows queries such as `photos taken yesterday` and `photos I u
 - Virtual Bin with soft-delete and restore
 - Permanent deletion
 - Album deletion without deleting contained images
-- Persistent LanceDB schema migration
 - Light/dark theme support
 
 ## Tech Stack
@@ -99,7 +97,7 @@ GALLERAI/
     ├── lancedb/
     ├── cache/
     └── logs/
-````
+```
 
 ## Database
 
@@ -115,9 +113,9 @@ GALLERAI/
 
 ### Prerequisites
 
-* Python 3.10+
-* Node.js
-* Expo development environment
+- Python 3.10+
+- Node.js
+- Expo development environment
 
 ### 1. Backend Setup
 
@@ -163,21 +161,21 @@ Both the FastAPI backend and Expo application are required during development.
 
 ## API Endpoints
 
-| Method | Endpoint                       | Description                             |
-| ------ | ------------------------------ | --------------------------------------- |
-| POST   | `/upload`                      | Upload and automatically index an image |
-| POST   | `/query`                       | Run image retrieval                     |
-| GET    | `/albums`                      | List albums                             |
-| POST   | `/albums`                      | Create an album                         |
-| PATCH  | `/albums/{album_id}`           | Rename an album                         |
-| DELETE | `/albums/{album_id}`           | Delete an album                         |
-| POST   | `/albums/{album_id}/images`    | Add images to an album                  |
-| POST   | `/images/{image_id}/delete`    | Move an image to Bin                    |
-| POST   | `/images/{image_id}/restore`   | Restore an image                        |
-| DELETE | `/images/{image_id}/permanent` | Permanently delete an image             |
-| GET    | `/bin`                         | List deleted images                     |
-| POST   | `/bin/clear`                   | Permanently clear Bin                   |
-| GET    | `/health`                      | Backend health/status                   |
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/upload` | Upload and automatically index an image |
+| POST | `/query` | Run image retrieval |
+| GET | `/albums` | List albums |
+| POST | `/albums` | Create an album |
+| PATCH | `/albums/{album_id}` | Rename an album |
+| DELETE | `/albums/{album_id}` | Delete an album |
+| POST | `/albums/{album_id}/images` | Add images to an album |
+| POST | `/images/{image_id}/delete` | Move an image to Bin |
+| POST | `/images/{image_id}/restore` | Restore an image |
+| DELETE | `/images/{image_id}/permanent` | Permanently delete an image |
+| GET | `/bin` | List deleted images |
+| POST | `/bin/clear` | Permanently clear Bin |
+| GET | `/health` | Backend health/status |
 
 ## Image Processing
 
@@ -203,11 +201,11 @@ Long-pressing an image enters multi-selection mode.
 
 Selection actions include:
 
-* Add to Album
-* Share
-* New Album
-* Delete
-* Select All / Clear
+- Add to Album
+- Share
+- New Album
+- Delete
+- Select All / Clear
 
 Chat selection is scoped to the current response bubble, preventing Select All from affecting unrelated responses.
 
@@ -228,30 +226,26 @@ Deleted images are excluded from normal Gallery and retrieval results. The Bin i
 
 Implemented:
 
-* Hybrid semantic/OCR/metadata retrieval
-* Chat and Gallery retrieval modes
-* Automatic upload and indexing
-* Persistent albums
-* Multi-selection and bulk actions
-* Response-scoped Chat selection
-* Native multi-image sharing
-* Soft-delete, restore, and permanent deletion
-* Album deletion
-* Persistent LanceDB schema migration
-* Dual-layer metadata foundation
-* Cross-platform UI and theming
+- Hybrid semantic/OCR/metadata retrieval
+- Chat and Gallery retrieval modes
+- Automatic upload and indexing
+- Persistent albums
+- Multi-selection and bulk actions
+- Response-scoped Chat selection
+- Native multi-image sharing
+- Soft-delete, restore, and permanent deletion
+- Album deletion
+- Dual-layer metadata foundation
+- Cross-platform UI and theming
 
 ## Roadmap
 
-* Improve retrieval accuracy and query understanding
-* Expand metadata and temporal retrieval
-* GallerAI conversational agent
-* Context-aware gallery actions
-* Independent conversation contexts
+- Improve retrieval accuracy and query understanding
+- Expand metadata and temporal retrieval
+- GallerAI conversational agent
+- Context-aware gallery actions
+- Independent conversation contexts
 
 ## License
 
 MIT
-
-```
-```
