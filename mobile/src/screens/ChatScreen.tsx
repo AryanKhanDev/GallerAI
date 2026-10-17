@@ -731,6 +731,9 @@ export default function ChatScreen() {
                   styles.plusBtn
                 }
                 onPress={toggleMenu}
+                accessibilityRole="button"
+                accessibilityLabel={menuOpen ? "Close attachments" : "Add attachment"}
+                accessibilityState={{ disabled: uploading, expanded: menuOpen }}
                 disabled={uploading}
               >
                 {uploading ? (
@@ -758,6 +761,8 @@ export default function ChatScreen() {
               onChangeText={
                 setInput
               }
+              accessibilityLabel="Message"
+              {...(Platform.OS === "web" ? { rows: Math.min(5, input.split("\n").length) } : {})}
               placeholder="Ask about your photos…"
               placeholderTextColor={
                 colors.text2
@@ -778,6 +783,10 @@ export default function ChatScreen() {
               onPress={
                 handleSend
               }
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+              hitSlop={3}
+              accessibilityState={{ disabled: !input.trim() || isLoading }}
               disabled={
                 !input.trim() ||
                 isLoading
@@ -993,6 +1002,8 @@ themeToggleBtn: {
     },
 
     inputBar: {
+      alignItems: "center",
+      paddingTop: spacing.sm,
       paddingHorizontal:
         spacing.md,
       paddingBottom:
@@ -1002,28 +1013,30 @@ themeToggleBtn: {
     },
 
     composer: {
+      width: "100%",
+      maxWidth: Platform.OS === "web" ? 768 : undefined,
       flexDirection:
         "row",
       alignItems:
-        "flex-end",
+        "center",
       backgroundColor:
         colors.bg1,
       borderRadius: 28,
-      paddingLeft: 10,
-      paddingRight: 8,
-      paddingVertical: 8,
-      minHeight: 58,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      minHeight: 56,
     },
 
     plusBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      flexShrink: 0,
       alignItems:
         "center",
       justifyContent:
         "center",
-      marginRight: 6,
+      marginRight: spacing.xs,
     },
 
     plusIcon: {
@@ -1035,20 +1048,24 @@ themeToggleBtn: {
     },
 
     input: {
+      ...(Platform.OS === "web" ? { outlineWidth: 0 } : {}),
       flex: 1,
+      minWidth: 0,
+      minHeight: 44,
       color:
       colors.text0,
       fontSize:
         font.md,
       lineHeight: 22,
       maxHeight: 120,
-      paddingVertical: 10,
+      paddingVertical: 11,
     },
 
     sendBtn: {
       width: 38,
       height: 38,
       borderRadius: 19,
+      flexShrink: 0,
       backgroundColor:
         colors.accent,
       alignItems:
