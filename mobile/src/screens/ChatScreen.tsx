@@ -70,8 +70,14 @@ import { Moon, Sun } from "lucide-react-native";
 import ImageViewerModal from "../components/ImageViewerModal";
 
 const SCREEN_W = Dimensions.get("window").width;
-const THUMB =
+
+const calculatedThumb =
   (SCREEN_W - spacing.lg * 2 - spacing.sm * 2) / 3;
+
+const THUMB =
+  Platform.OS === "web"
+    ? Math.min(calculatedThumb, 300)
+    : calculatedThumb;
 
 function resolveUri(url: string) {
   return url.startsWith("http") ? url : `${BASE_URL}${url}`;

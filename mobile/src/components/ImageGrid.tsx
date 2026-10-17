@@ -27,6 +27,8 @@ const SCREEN_W =
     "window"
   ).width;
 
+const MAX_ITEM_SIZE = 180;
+
 interface GridImage {
   id: string;
   thumbnail_url: string;
@@ -64,11 +66,17 @@ export default function ImageGrid({
     spacing.sm *
     (numColumns + 1);
 
-  const itemSize =
+  const calculatedItemSize =
     (
       SCREEN_W -
       totalSpacing
     ) / numColumns;
+
+  const itemSize =
+    Math.min(
+      calculatedItemSize,
+      MAX_ITEM_SIZE
+    );
 
   const hasScores =
     !!scores &&
@@ -222,13 +230,13 @@ const styles =
     },
 
     row: {
-  justifyContent:
-    "flex-start",
-  gap:
-    spacing.sm,
-  marginBottom:
-    spacing.sm,
-},
+      justifyContent:
+        "flex-start",
+      gap:
+        spacing.sm,
+      marginBottom:
+        spacing.sm,
+    },
 
     cell: {
       borderRadius:
