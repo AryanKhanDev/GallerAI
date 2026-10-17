@@ -4,6 +4,8 @@
 
 import React, {
   useCallback,
+  useState,
+  useRef,
 } from "react";
 
 import {
@@ -11,7 +13,7 @@ import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
+  LayoutChangeEvent,
 } from "react-native";
 
 import {
@@ -22,12 +24,7 @@ import {
 
 import SelectableImage from "./SelectableImage";
 
-const SCREEN_W =
-  Dimensions.get(
-    "window"
-  ).width;
-
-const MAX_ITEM_SIZE = 180;
+import { imageLayout } from "../utils/imageLayout";
 
 interface GridImage {
   id: string;
@@ -57,26 +54,24 @@ export default function ImageGrid({
   scores,
   onPress,
   onLongPress,
-  numColumns = 3,
+  numColumns: requestedColumns,
   emptyText =
     "No images found",
   selectionContext,
 }: Props) {
-  const totalSpacing =
-    spacing.sm *
-    (numColumns + 1);
-
-  const calculatedItemSize =
-    (
-      SCREEN_W -
-      totalSpacing
-    ) / numColumns;
-
-  const itemSize =
-    Math.min(
-      calculatedItemSize,
-      MAX_ITEM_SIZE
-    );
+  const [width, setWidth] = useState(0);
+  const firstVisibleIndex = useRef(0);
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    setWidth(event.nativeEvent.layout.width);
+  }, []);
+  const contentWidth = Math.max(1, width - spacing.sm * 2);
+  const layout = imageLayout(contentWidth, spacing.sm, 100, 180);
+  const numColumns = requestedColumns
+    ? Math.max(1, Math.floor(requestedColumns))
+    : layout.columns;
+  const itemSize = requestedColumns
+    ? Math.max(1, (contentWidth - spacing.sm * (numColumns - 1)) / numColumns)
+    : layout.size;
 
   const hasScores =
     !!scores &&
@@ -173,55 +168,61 @@ export default function ImageGrid({
       ]
     );
 
-  if (
-    images.length === 0
-  ) {
-    return (
-      <View
-        style={
-          styles.empty
-        }
-      >
-        <Text
-          style={
-            styles.emptyText
-          }
-        >
-          {emptyText}
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <FlatList
-      data={images}
-      renderItem={
-        renderItem
-      }
-      keyExtractor={(
-        item
-      ) => item.id}
-      numColumns={
-        numColumns
-      }
-      contentContainerStyle={
-        styles.grid
-      }
-      columnWrapperStyle={
-        numColumns > 1
-          ? styles.row
-          : undefined
-      }
-      showsVerticalScrollIndicator={
-        false
-      }
-    />
+    <View style={styles.container} onLayout={onLayout}>
+      {images.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>{emptyText}</Text>
+        </View>
+      ) : width > 0 && (
+        <FlatList
+          key={numColumns}
+          data={images}
+          // FlatList virtualizes rows when numColumns > 1. Restore the row
+          // containing the previously visible image after a column remount.
+          initialScrollIndex={Math.floor(
+            Math.min(firstVisibleIndex.current, images.length - 1) / numColumns
+          )}
+          getItemLayout={(_, index) => ({
+            length: itemSize + spacing.sm,
+            offset: spacing.sm + index * (itemSize + spacing.sm),
+            index,
+          })}
+          onScroll={(event) => {
+            const row = Math.floor(Math.max(0, event.nativeEvent.contentOffset.y - spacing.sm) / (itemSize + spacing.sm));
+            firstVisibleIndex.current = row * numColumns;
+          }}
+          scrollEventThrottle={16}
+          renderItem={
+            renderItem
+          }
+          keyExtractor={(
+            item
+          ) => item.id}
+          numColumns={
+            numColumns
+          }
+          contentContainerStyle={
+            styles.grid
+          }
+          columnWrapperStyle={
+            numColumns > 1
+              ? styles.row
+              : undefined
+          }
+          showsVerticalScrollIndicator={
+            false
+          }
+        />
+      )}
+    </View>
   );
 }
 
 const styles =
   StyleSheet.create({
+    container: { flex: 1, minWidth: 0 },
+
     grid: {
       padding:
         spacing.sm,
@@ -234,8 +235,6 @@ const styles =
         "flex-start",
       gap:
         spacing.sm,
-      marginBottom:
-        spacing.sm,
     },
 
     cell: {
@@ -247,6 +246,7 @@ const styles =
         colors.bg2,
       position:
         "relative",
+      marginBottom: spacing.sm,
     },
 
     scoreBadge: {

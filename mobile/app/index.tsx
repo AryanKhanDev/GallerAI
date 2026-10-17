@@ -10,11 +10,11 @@
  * No visible tab bar — pure swipe navigation.
  */
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   ScrollView,
   Animated,
 } from "react-native";
@@ -23,17 +23,23 @@ import ChatScreen from "../src/screens/ChatScreen";
 import GalleryScreen from "../src/screens/GalleryScreen";
 import { colors } from "../src/utils/theme";
 
-const SCREEN_W = Dimensions.get("window").width;
-
 export default function App() {
+  const { width: screenWidth } = useWindowDimensions();
+  const pageRef = useRef(0);
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const goToPage = (index: number) => {
-    scrollRef.current?.scrollTo({ x: index * SCREEN_W, animated: true });
+    scrollRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+    pageRef.current = index;
     setPage(index);
   };
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ x: pageRef.current * screenWidth, animated: false });
+    scrollX.setValue(pageRef.current * screenWidth);
+  }, [screenWidth, scrollX]);
 
   return (
     <View style={styles.root}>
@@ -51,20 +57,25 @@ export default function App() {
             useNativeDriver: false,
             listener: (e: any) => {
               const x = e.nativeEvent.contentOffset.x;
-              const newPage = Math.round(x / SCREEN_W);
-              if (newPage !== page) setPage(newPage);
+              const newPage = Math.round(x / screenWidth);
+              const nextPage = Math.max(0, Math.min(1, newPage));
+              pageRef.current = nextPage;
+              if (nextPage !== page) setPage(nextPage);
             },
           }
         )}
+        onContentSizeChange={() => {
+          scrollRef.current?.scrollTo({ x: pageRef.current * screenWidth, animated: false });
+        }}
         style={styles.pager}
       >
         {/* Screen 0: Chat */}
-        <View style={styles.screen}>
+        <View style={[styles.screen, { width: screenWidth }]}>
           <ChatScreen />
         </View>
 
         {/* Screen 1: Gallery */}
-        <View style={styles.screen}>
+        <View style={[styles.screen, { width: screenWidth }]}>
           <GalleryScreen />
         </View>
       </Animated.ScrollView>
@@ -73,12 +84,12 @@ export default function App() {
       <View style={styles.dots}>
         {[0, 1].map((i) => {
           const opacity = scrollX.interpolate({
-            inputRange: [(i - 1) * SCREEN_W, i * SCREEN_W, (i + 1) * SCREEN_W],
+            inputRange: [(i - 1) * screenWidth, i * screenWidth, (i + 1) * screenWidth],
             outputRange: [0.3, 1, 0.3],
             extrapolate: "clamp",
           });
           const width = scrollX.interpolate({
-            inputRange: [(i - 1) * SCREEN_W, i * SCREEN_W, (i + 1) * SCREEN_W],
+            inputRange: [(i - 1) * screenWidth, i * screenWidth, (i + 1) * screenWidth],
             outputRange: [6, 20, 6],
             extrapolate: "clamp",
           });
@@ -97,7 +108,7 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg0 },
   pager: { flex: 1 },
-  screen: { width: SCREEN_W, flex: 1 },
+  screen: { flex: 1 },
   dots: {
     position: "absolute",
     bottom: 8,

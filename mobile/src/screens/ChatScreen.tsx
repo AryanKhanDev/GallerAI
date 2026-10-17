@@ -26,7 +26,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Dimensions,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -69,15 +68,7 @@ import { Moon, Sun } from "lucide-react-native";
 
 import ImageViewerModal from "../components/ImageViewerModal";
 
-const SCREEN_W = Dimensions.get("window").width;
-
-const calculatedThumb =
-  (SCREEN_W - spacing.lg * 2 - spacing.sm * 2) / 3;
-
-const THUMB =
-  Platform.OS === "web"
-    ? Math.min(calculatedThumb, 300)
-    : calculatedThumb;
+import { imageLayout } from "../utils/imageLayout";
 
 function resolveUri(url: string) {
   return url.startsWith("http") ? url : `${BASE_URL}${url}`;
@@ -122,6 +113,10 @@ export default function ChatScreen() {
       setActiveBubbleId(null);
     }
   }, [isSelecting]);
+
+  const [chatWidth, setChatWidth] = useState(0);
+  const resultWidth = Math.max(1, Math.min(720, (chatWidth - spacing.md * 2) * 0.88) - spacing.md * 2);
+  const thumbnails = imageLayout(resultWidth, spacing.sm, 88, 128);
 
   const [input, setInput] = useState("");
 
@@ -537,6 +532,7 @@ export default function ChatScreen() {
         <View
           style={[
             styles.bubble,
+            !isUser && item.images?.length ? { width: resultWidth + spacing.md * 2 } : undefined,
             isUser
               ? styles.bubbleUser
               : styles.bubbleAssistant,
@@ -566,7 +562,7 @@ export default function ChatScreen() {
                       key={img.id}
                       id={chatSelectionId(item.id, img.id)}
                       thumbnailUrl={img.thumbnail_url}
-                      size={THUMB}
+                      size={thumbnails.size}
                       selectionContext="chat"
                       onSelectStart={() =>
                         setActiveBubbleId(item.id)
@@ -660,6 +656,8 @@ export default function ChatScreen() {
         }
       >
         <FlatList
+          onLayout={(event) => setChatWidth(event.nativeEvent.layout.width)}
+          extraData={resultWidth}
           ref={listRef}
           data={messages}
           renderItem={
